@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for this daemon -->
+    <key>Label</key>
+    <string>${DAEMON_LABEL}</string>
+
+    <!-- Path to the watcher script -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>${INSTALL_DIR}/watch_bear.sh</string>
+    </array>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>${INSTALL_DIR}</string>
+
+    <!-- Run when loaded (keeps it running) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it crashes -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Standard output and error logs -->
+    <key>StandardOutPath</key>
+    <string>${INSTALL_DIR}/daemon_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>${INSTALL_DIR}/daemon_stderr.log</string>
+
+    <!-- Process type -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${PATH}</string>
+    </dict>
+
+    <!-- Wait a bit before restarting if it exits -->
+    <key>ThrottleInterval</key>
+    <integer>${THROTTLE_INTERVAL}</integer>
+</dict>
+</plist>
