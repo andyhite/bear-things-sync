@@ -11,9 +11,9 @@ import tempfile
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from .config import LOG_BACKUP_COUNT, LOG_FILE, LOG_LEVEL, LOG_MAX_BYTES, STATE_FILE
+from .config import LOG_FILE, STATE_FILE, settings
 
 # Configure rotating file handler for logs
 _logger = None
@@ -41,7 +41,7 @@ def _get_logger() -> logging.Logger:
             "WARNING": logging.WARNING,
             "ERROR": logging.ERROR,
         }
-        _logger.setLevel(level_map.get(LOG_LEVEL.upper(), logging.INFO))
+        _logger.setLevel(level_map.get(settings.log_level.upper(), logging.INFO))
         _logger.handlers.clear()  # Clear any existing handlers
 
         # Ensure parent directory exists
@@ -50,8 +50,8 @@ def _get_logger() -> logging.Logger:
         # Add rotating file handler
         handler = RotatingFileHandler(
             LOG_FILE,
-            maxBytes=LOG_MAX_BYTES,
-            backupCount=LOG_BACKUP_COUNT,
+            maxBytes=settings.log_max_bytes,
+            backupCount=settings.log_backup_count,
         )
         handler.setFormatter(logging.Formatter("%(message)s"))
         _logger.addHandler(handler)
@@ -217,7 +217,7 @@ def pascal_to_title_case(text: str) -> str:
     return result
 
 
-def pluralize(count: int, singular: str, plural: Optional[str] = None) -> str:
+def pluralize(count: int, singular: str, plural: str | None = None) -> str:
     """
     Return singular or plural form based on count.
 
@@ -298,7 +298,7 @@ def generate_todo_id(note_id: str, todo_text: str) -> str:
 
 def find_todo_by_fuzzy_match(
     todo_text: str, synced_todos: dict[str, dict], note_id: str
-) -> Optional[str]:
+) -> str | None:
     """
     Find a synced todo by fuzzy matching when exact hash doesn't match.
 
@@ -343,10 +343,7 @@ def send_notification(title: str, message: str, sound: bool = False) -> bool:
         True if notification was sent successfully, False otherwise
     """
     # Check if notifications are enabled in config
-    from .config import load_user_config
-
-    user_config = load_user_config()
-    if not user_config.get("enable_notifications", True):
+    if not settings.enable_notifications:
         return False
 
     try:

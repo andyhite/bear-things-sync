@@ -5,26 +5,17 @@ import sqlite3
 import subprocess
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any
 
-from .config import (
-    APPLESCRIPT_INITIAL_DELAY,
-    APPLESCRIPT_MAX_RETRIES,
-    APPLESCRIPT_TIMEOUT,
-    BEAR_DATABASE_PATH,
-    SQLITE_LOCK_INITIAL_DELAY,
-    SQLITE_LOCK_MAX_RETRIES,
-    SQLITE_TIMEOUT,
-    TODO_PATTERNS,
-)
+from .config import BEAR_DATABASE_PATH, TODO_PATTERNS, settings
 from .utils import log
 
 # Cache schema validation result to avoid repeated checks
 _schema_validated = False
-_schema_validation_error: Optional[str] = None
+_schema_validation_error: str | None = None
 
 
-def validate_bear_schema() -> tuple[bool, Optional[str]]:
+def validate_bear_schema() -> tuple[bool, str | None]:
     """
     Validate that the Bear database has the expected schema.
 
@@ -52,7 +43,7 @@ def validate_bear_schema() -> tuple[bool, Optional[str]]:
 
     try:
         conn = sqlite3.connect(
-            f"file:{BEAR_DATABASE_PATH}?mode=ro", uri=True, timeout=SQLITE_TIMEOUT
+            f"file:{BEAR_DATABASE_PATH}?mode=ro", uri=True, timeout=settings.sqlite_timeout
         )
         cursor = conn.cursor()
 
@@ -124,13 +115,13 @@ def get_notes_with_todos() -> list[dict[str, Any]]:
         log(f"ERROR: {error_message}")
         return []
 
-    max_retries = SQLITE_LOCK_MAX_RETRIES
-    retry_delay = SQLITE_LOCK_INITIAL_DELAY
+    max_retries = settings.sqlite_lock_max_retries
+    retry_delay = settings.sqlite_lock_initial_delay
 
     for attempt in range(max_retries):
         try:
             conn = sqlite3.connect(
-                f"file:{BEAR_DATABASE_PATH}?mode=ro", uri=True, timeout=SQLITE_TIMEOUT
+                f"file:{BEAR_DATABASE_PATH}?mode=ro", uri=True, timeout=settings.sqlite_timeout
             )
             cursor = conn.cursor()
 
@@ -240,7 +231,7 @@ def extract_todos(content: str) -> list[dict[str, Any]]:
     return todos
 
 
-def _run_applescript(script: str, timeout: int = APPLESCRIPT_TIMEOUT) -> str:
+def _run_applescript(script: str, timeout: int = settings.applescript_timeout) -> str:
     """
     Execute an AppleScript and return the output.
 
@@ -296,8 +287,8 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> tu
         Tuple of (success, updated_content). If successful, updated_content contains
         the new note content with the todo marked complete. If failed, returns original content.
     """
-    max_attempts = APPLESCRIPT_MAX_RETRIES
-    delay = APPLESCRIPT_INITIAL_DELAY
+    max_attempts = settings.applescript_max_retries
+    delay = settings.applescript_initial_delay
 
     for attempt in range(max_attempts):
         try:
@@ -342,7 +333,7 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> tu
             url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
 
             # Open the URL to trigger Bear (use -g to not activate/focus Bear)
-            subprocess.run(["open", "-g", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+            subprocess.run(["open", "-g", url], check=True, timeout=settings.applescript_timeout)
 
             # Give Bear a moment to process
             time.sleep(0.5)
@@ -394,8 +385,8 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
         Tuple of (success, updated_content). If successful, updated_content contains
         the new note content with the todo marked incomplete. If failed, returns original content.
     """
-    max_attempts = APPLESCRIPT_MAX_RETRIES
-    delay = APPLESCRIPT_INITIAL_DELAY
+    max_attempts = settings.applescript_max_retries
+    delay = settings.applescript_initial_delay
 
     for attempt in range(max_attempts):
         try:
@@ -440,7 +431,7 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
             url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
 
             # Open the URL to trigger Bear (use -g to not activate/focus Bear)
-            subprocess.run(["open", "-g", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+            subprocess.run(["open", "-g", url], check=True, timeout=settings.applescript_timeout)
 
             # Give Bear a moment to process
             time.sleep(0.5)

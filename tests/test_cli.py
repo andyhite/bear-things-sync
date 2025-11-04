@@ -33,6 +33,9 @@ class TestCLI:
 
     def test_install_command(self, mocker):
         """Install command should call install."""
+        # Import the module first to make it patchable
+        import bear_things_sync.install  # noqa: F401
+
         mocker.patch.object(sys, "argv", ["bear-things-sync", "install"])
         mock_install = mocker.patch("bear_things_sync.install.install")
 
@@ -42,6 +45,9 @@ class TestCLI:
 
     def test_uninstall_command(self, mocker):
         """Uninstall command should call uninstall."""
+        # Import the module first to make it patchable
+        import bear_things_sync.uninstall  # noqa: F401
+
         mocker.patch.object(sys, "argv", ["bear-things-sync", "uninstall"])
         mock_uninstall = mocker.patch("bear_things_sync.uninstall.uninstall")
 

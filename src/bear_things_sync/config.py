@@ -4,7 +4,10 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings.sources import TomlConfigSettingsSource
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -20,40 +23,146 @@ DAEMON_STDOUT_LOG = DATA_DIR / "daemon_stdout.log"
 DAEMON_STDERR_LOG = DATA_DIR / "daemon_stderr.log"
 
 # Configuration file
-CONFIG_FILE = DATA_DIR / "config.json"
+CONFIG_FILE = DATA_DIR / "config.toml"
 
 
-def load_user_config() -> dict:
+class Settings(BaseSettings):
     """
-    Load user configuration from config file if it exists.
+    Application settings loaded from TOML config file and environment variables.
+
+    Environment variables take precedence over config file values.
+    Use BEAR_THINGS_SYNC_ prefix for environment variables (e.g., BEAR_THINGS_SYNC_SYNC_TAG).
+    """
+
+    model_config = SettingsConfigDict(
+        toml_file=CONFIG_FILE,
+        env_prefix="BEAR_THINGS_SYNC_",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """
+        Define the settings sources and their priority.
+
+        Priority (highest to lowest):
+        1. Environment variables
+        2. TOML config file
+        3. Default values
+        """
+        return (
+            env_settings,
+            TomlConfigSettingsSource(settings_cls),
+            init_settings,
+        )
+
+    # Database paths
+    bear_database_path: str | None = Field(
+        default=None, description="Path to Bear's SQLite database"
+    )
+    things_database_path: str | None = Field(
+        default=None, description="Path to Things 3's SQLite database"
+    )
+
+    # Sync configuration
+    sync_tag: str = Field(default="Bear Sync", description="Tag to add to synced todos in Things 3")
+    bidirectional_sync: bool = Field(
+        default=True, description="Enable bi-directional sync (Things → Bear completion)"
+    )
+    sync_cooldown: int = Field(
+        default=5, description="Cooldown in seconds to prevent ping-pong updates"
+    )
+    min_sync_interval: int = Field(
+        default=10, description="Minimum seconds between sync operations"
+    )
+
+    # Daemon configuration
+    daemon_throttle_interval: int = Field(
+        default=30, description="Seconds to wait before restarting daemon"
+    )
+
+    # Logging configuration
+    log_max_bytes: int = Field(default=5 * 1024 * 1024, description="Maximum bytes per log file")
+    log_backup_count: int = Field(default=3, description="Number of backup log files to keep")
+    log_level: str = Field(default="INFO", description="Logging level (INFO, WARNING, ERROR)")
+
+    # Retry configuration
+    applescript_max_retries: int = Field(
+        default=3, description="Maximum retry attempts for AppleScript operations"
+    )
+    applescript_initial_delay: float = Field(
+        default=1.0, description="Initial delay in seconds for AppleScript retries"
+    )
+    applescript_timeout: int = Field(
+        default=5, description="Timeout in seconds for AppleScript operations"
+    )
+
+    # Database configuration
+    sqlite_timeout: float = Field(default=5.0, description="SQLite connection timeout in seconds")
+    sqlite_lock_max_retries: int = Field(
+        default=3, description="Maximum retries for locked database"
+    )
+    sqlite_lock_initial_delay: float = Field(
+        default=0.5, description="Initial delay for database lock retry"
+    )
+
+    # Command timeouts
+    command_timeout: int = Field(default=5, description="General command timeout in seconds")
+
+    # Embedding configuration for deduplication
+    similarity_threshold: float = Field(
+        default=0.85, description="Similarity threshold for duplicate detection"
+    )
+    embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        description="Model name for generating embeddings",
+    )
+    embedding_cache_max_age_days: int = Field(
+        default=7, description="Days to keep embedding cache before expiring"
+    )
+
+    # Notification configuration
+    enable_notifications: bool = Field(
+        default=True, description="Enable macOS notifications for sync events"
+    )
+
+
+def load_settings() -> Settings:
+    """
+    Load settings from config file and environment variables.
 
     Returns:
-        Dictionary with user configuration, or empty dict if file doesn't exist
+        Settings instance with loaded configuration
     """
-    if not CONFIG_FILE.exists():
-        return {}
-
     try:
-        import json
-
-        with open(CONFIG_FILE) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        # If config file is invalid, ignore it and use defaults
-        return {}
+        return Settings()
+    except Exception:
+        # If config file doesn't exist or is invalid, use defaults
+        return Settings.model_construct()
 
 
-def discover_bear_database() -> Optional[Path]:
+def discover_bear_database(settings: Settings) -> Path | None:
     """
     Try to discover Bear database location by searching Group Containers.
+
+    Args:
+        settings: Settings instance with optional configured path
 
     Returns:
         Path to Bear database if found, None otherwise
     """
     # First, check if user has manually configured the path
-    user_config = load_user_config()
-    if "bear_database_path" in user_config:
-        manual_path = Path(user_config["bear_database_path"]).expanduser()
+    if settings.bear_database_path:
+        manual_path = Path(settings.bear_database_path).expanduser()
         if manual_path.exists():
             return manual_path
         else:
@@ -76,7 +185,7 @@ def discover_bear_database() -> Optional[Path]:
     return None
 
 
-def _prompt_for_bear_database() -> Optional[Path]:
+def _prompt_for_bear_database() -> Path | None:
     """
     Prompt user to locate Bear database manually.
 
@@ -109,70 +218,30 @@ TODO_PATTERNS = {
     ),  # Matches "- [x] task" (case-insensitive)
 }
 
-# Load user configuration (already defined above)
-_user_config = load_user_config()
-
-# Things 3 sync tag (configurable)
-THINGS_SYNC_TAG = _user_config.get("sync_tag", "Bear Sync")
+# Load settings once at module import
+settings = load_settings()
 
 # Daemon configuration
 DAEMON_LABEL = "com.bear-things-sync"  # Unique identifier for the daemon
 DAEMON_PLIST_NAME = f"{DAEMON_LABEL}.plist"
-MIN_SYNC_INTERVAL = _user_config.get("min_sync_interval", 10)  # Minimum seconds between syncs
-DAEMON_THROTTLE_INTERVAL = _user_config.get(
-    "daemon_throttle_interval", 30
-)  # Seconds to wait before restarting
-
-# Logging configuration
-LOG_MAX_BYTES = _user_config.get("log_max_bytes", 5 * 1024 * 1024)  # 5MB per log file
-LOG_BACKUP_COUNT = _user_config.get("log_backup_count", 3)  # Keep 3 backup log files
-LOG_LEVEL = _user_config.get("log_level", "INFO")  # INFO, WARNING, ERROR
-
-# Retry configuration
-APPLESCRIPT_MAX_RETRIES = _user_config.get("applescript_max_retries", 3)  # Maximum retry attempts
-APPLESCRIPT_INITIAL_DELAY = _user_config.get(
-    "applescript_initial_delay", 1.0
-)  # Initial delay in seconds
-APPLESCRIPT_TIMEOUT = _user_config.get("applescript_timeout", 5)  # Timeout in seconds
-
-# Database configuration
-SQLITE_TIMEOUT = _user_config.get("sqlite_timeout", 5.0)  # SQLite connection timeout in seconds
-SQLITE_LOCK_MAX_RETRIES = _user_config.get("sqlite_lock_max_retries", 3)  # Retries for locked DB
-SQLITE_LOCK_INITIAL_DELAY = _user_config.get(
-    "sqlite_lock_initial_delay", 0.5
-)  # Initial delay for lock retry
-
-# Command timeouts
-COMMAND_TIMEOUT = _user_config.get("command_timeout", 5)  # General command timeout in seconds
-
-# Embedding configuration for deduplication
-SIMILARITY_THRESHOLD = _user_config.get("similarity_threshold", 0.85)  # Moderate threshold
-EMBEDDING_MODEL = _user_config.get(
-    "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
-)  # Model for embeddings
-EMBEDDING_CACHE_MAX_AGE_DAYS = _user_config.get(
-    "embedding_cache_max_age_days", 7
-)  # Expire old embeddings
-
-# Bi-directional sync configuration
-BIDIRECTIONAL_SYNC = _user_config.get("bidirectional_sync", True)  # Enable bi-directional sync
-SYNC_COOLDOWN = _user_config.get("sync_cooldown", 5)  # Cooldown in seconds to prevent ping-pong
 
 # Ensure data directory exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def discover_things_database() -> Optional[Path]:
+def discover_things_database(settings: Settings) -> Path | None:
     """
     Try to discover Things 3 database location.
+
+    Args:
+        settings: Settings instance with optional configured path
 
     Returns:
         Path to Things 3 database if found, None otherwise
     """
     # First, check if user has manually configured the path
-    user_config = load_user_config()
-    if "things_database_path" in user_config:
-        manual_path = Path(user_config["things_database_path"]).expanduser()
+    if settings.things_database_path:
+        manual_path = Path(settings.things_database_path).expanduser()
         if manual_path.exists():
             return manual_path
         else:
@@ -198,7 +267,7 @@ def discover_things_database() -> Optional[Path]:
 
 
 # Bear database - use discovery as primary method
-_discovered_db = discover_bear_database()
+_discovered_db = discover_bear_database(settings)
 if _discovered_db:
     BEAR_DATABASE_PATH = _discovered_db
 else:
@@ -208,12 +277,30 @@ else:
     BEAR_DATABASE_PATH = Path.home() / ".bear-things-sync" / "BEAR_DATABASE_NOT_FOUND"
 
 # Things 3 database - use discovery
-_discovered_things_db = discover_things_database()
+_discovered_things_db = discover_things_database(settings)
 if _discovered_things_db:
     THINGS_DATABASE_PATH = _discovered_things_db
 else:
     # Use placeholder path (bi-directional sync will be disabled if Things DB not found)
     THINGS_DATABASE_PATH = Path.home() / ".bear-things-sync" / "THINGS_DATABASE_NOT_FOUND"
+
+# Export settings instance for use throughout the application
+__all__ = [
+    "settings",
+    "Settings",
+    "BEAR_DATABASE_PATH",
+    "THINGS_DATABASE_PATH",
+    "DATA_DIR",
+    "STATE_FILE",
+    "LOG_FILE",
+    "WATCHER_LOG_FILE",
+    "DAEMON_STDOUT_LOG",
+    "DAEMON_STDERR_LOG",
+    "CONFIG_FILE",
+    "TODO_PATTERNS",
+    "DAEMON_LABEL",
+    "DAEMON_PLIST_NAME",
+]
 
 
 def get_bear_database_directory() -> str:
@@ -230,7 +317,7 @@ def get_bear_database_directory() -> str:
 
     # If database doesn't exist yet, return the expected directory
     # based on discovery or fallback path
-    _discovered_db = discover_bear_database()
+    _discovered_db = discover_bear_database(settings)
     if _discovered_db:
         return str(_discovered_db.parent)
 

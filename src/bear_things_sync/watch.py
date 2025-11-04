@@ -6,7 +6,7 @@ import time
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from .config import BEAR_DATABASE_PATH, BIDIRECTIONAL_SYNC, THINGS_DATABASE_PATH
+from .config import BEAR_DATABASE_PATH, THINGS_DATABASE_PATH, settings
 from .sync import execute
 from .utils import log
 
@@ -113,7 +113,7 @@ def watch() -> None:
 
     # Check Things 3 database for bi-directional sync
     things_dir = None
-    if BIDIRECTIONAL_SYNC:
+    if settings.bidirectional_sync:
         if THINGS_DATABASE_PATH.exists():
             things_dir = THINGS_DATABASE_PATH.parent
             log(f"Monitoring Things 3: {things_dir}")

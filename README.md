@@ -3,7 +3,7 @@
 [![CI](https://github.com/andyhite/bear-things-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/andyhite/bear-things-sync/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/bear-things-sync.svg)](https://pypi.org/project/bear-things-sync/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 Keep your todos in sync between Bear and Things 3. When you add a todo in Bear, it shows up in Things 3. When you complete it in Things 3, it gets checked off in Bear.
 
@@ -20,7 +20,7 @@ When you complete a todo in Things 3, it gets marked as done in your Bear note a
 ## Requirements
 
 - macOS with Bear and Things 3 installed
-- Python 3.9+ (built-in on macOS)
+- Python 3.11+ (built-in on macOS Ventura and later)
 
 ## Installation
 
@@ -65,22 +65,24 @@ uv pip install -e .
 
 ## Configuration
 
-The defaults work for most people, but if you want to customize things, create `~/.bear-things-sync/config.json`:
+The defaults work for most people, but if you want to customize things, create `~/.bear-things-sync/config.toml`:
 
-```json
-{
-  "sync_tag": "Bear Sync",
-  "bidirectional_sync": true,
-  "sync_cooldown": 5,
-  "bear_database_path": "/path/to/custom/database.sqlite",
-  "things_database_path": "/path/to/custom/Things/main.sqlite"
-}
+```toml
+sync_tag = "Bear Sync"
+bidirectional_sync = true
+sync_cooldown = 5
+
+# Optional: Override database paths (auto-discovery is used by default)
+# bear_database_path = "/path/to/custom/database.sqlite"
+# things_database_path = "/path/to/custom/Things/main.sqlite"
 ```
 
 Some useful options:
 - `sync_tag` - Change the tag added to synced todos (default: "Bear Sync")
 - `sync_cooldown` - Adjust the cooldown period in seconds (default: 5)
 - `bidirectional_sync` - Turn off Things → Bear sync if you only want one-way (default: true)
+
+You can also use environment variables with the `BEAR_THINGS_SYNC_` prefix (e.g., `BEAR_THINGS_SYNC_SYNC_TAG="My Tag"`).
 
 Check `src/bear_things_sync/config.py` for the full list of options.
 

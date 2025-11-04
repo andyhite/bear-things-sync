@@ -7,18 +7,16 @@ import sys
 from importlib import resources
 from pathlib import Path
 from string import Template
-from typing import Optional
 
 from .config import (
     BEAR_DATABASE_PATH,
-    COMMAND_TIMEOUT,
     DAEMON_LABEL,
     DAEMON_PLIST_NAME,
     DAEMON_STDERR_LOG,
-    DAEMON_THROTTLE_INTERVAL,
     LOG_FILE,
     WATCHER_LOG_FILE,
     get_install_directory,
+    settings,
 )
 
 
@@ -64,7 +62,7 @@ def validate_prerequisites() -> list[str]:
             capture_output=True,
             text=True,
             check=False,
-            timeout=COMMAND_TIMEOUT,
+            timeout=settings.command_timeout,
         )
         if result.returncode == 0 and result.stdout.strip():
             things_found = True
@@ -109,7 +107,7 @@ def validate_prerequisites() -> list[str]:
     return errors
 
 
-def detect_command_path(command: str) -> Optional[str]:
+def detect_command_path(command: str) -> str | None:
     """
     Detect the full path to a command using 'which'.
 
@@ -121,7 +119,11 @@ def detect_command_path(command: str) -> Optional[str]:
     """
     try:
         result = subprocess.run(
-            ["which", command], capture_output=True, text=True, check=True, timeout=COMMAND_TIMEOUT
+            ["which", command],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=settings.command_timeout,
         )
         return result.stdout.strip()
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -172,7 +174,7 @@ def get_package_root() -> Path:
     return Path(__file__).parent
 
 
-def find_template_file(filename: str) -> Optional[Path]:
+def find_template_file(filename: str) -> Path | None:
     """
     Find a template file using importlib.resources.
 
@@ -284,7 +286,7 @@ def generate_plist_config(install_dir: Path, plist_template: Path) -> Path:
         INSTALL_DIR=str(install_dir),
         HOME=str(Path.home()),
         PATH=path_env,
-        THROTTLE_INTERVAL=DAEMON_THROTTLE_INTERVAL,
+        THROTTLE_INTERVAL=settings.daemon_throttle_interval,
     )
     plist_output = install_dir / DAEMON_PLIST_NAME
     plist_output.write_text(plist_content)

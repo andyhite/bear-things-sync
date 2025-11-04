@@ -4,23 +4,19 @@ import subprocess
 import time
 import traceback
 from functools import wraps
-from typing import Any, Optional
+from typing import Any
 
-from .config import (
-    APPLESCRIPT_INITIAL_DELAY,
-    APPLESCRIPT_MAX_RETRIES,
-    APPLESCRIPT_TIMEOUT,
-)
+from .config import settings
 from .utils import log, strip_emojis
 
 
-def _run_applescript(script: str, timeout: int = APPLESCRIPT_TIMEOUT) -> str:
+def _run_applescript(script: str, timeout: int | None = None) -> str:
     """
     Execute an AppleScript and return the output.
 
     Args:
         script: AppleScript code to execute
-        timeout: Timeout in seconds
+        timeout: Timeout in seconds (defaults to settings.applescript_timeout)
 
     Returns:
         Script output as string
@@ -28,6 +24,9 @@ def _run_applescript(script: str, timeout: int = APPLESCRIPT_TIMEOUT) -> str:
     Raises:
         subprocess.CalledProcessError: If script execution fails
     """
+    if timeout is None:
+        timeout = settings.applescript_timeout
+
     result = subprocess.run(
         ["osascript", "-e", script],
         capture_output=True,
@@ -150,7 +149,7 @@ def get_projects() -> dict[str, str]:
         return {}
 
 
-def get_incomplete_todos(project: Optional[str] = None) -> list[dict]:
+def get_incomplete_todos(project: str | None = None) -> list[dict]:
     """
     Get all incomplete todos from Things 3, optionally filtered by project.
 
@@ -244,13 +243,13 @@ def get_incomplete_todos(project: Optional[str] = None) -> list[dict]:
 
 
 @retry_with_backoff(
-    max_attempts=APPLESCRIPT_MAX_RETRIES,
-    initial_delay=APPLESCRIPT_INITIAL_DELAY,
+    max_attempts=settings.applescript_max_retries,
+    initial_delay=settings.applescript_initial_delay,
     default_return=None,
 )
 def create_todo(
-    title: str, notes: str = "", tags: Optional[list[str]] = None, project: Optional[str] = None
-) -> Optional[str]:
+    title: str, notes: str = "", tags: list[str] | None = None, project: str | None = None
+) -> str | None:
     """
     Create a todo in Things 3 using AppleScript.
 
@@ -326,8 +325,8 @@ def create_todo(
 
 
 @retry_with_backoff(
-    max_attempts=APPLESCRIPT_MAX_RETRIES,
-    initial_delay=APPLESCRIPT_INITIAL_DELAY,
+    max_attempts=settings.applescript_max_retries,
+    initial_delay=settings.applescript_initial_delay,
     default_return=False,
 )
 def complete_todo(things_id: str) -> bool:
@@ -362,8 +361,8 @@ def complete_todo(things_id: str) -> bool:
 
 
 @retry_with_backoff(
-    max_attempts=APPLESCRIPT_MAX_RETRIES,
-    initial_delay=APPLESCRIPT_INITIAL_DELAY,
+    max_attempts=settings.applescript_max_retries,
+    initial_delay=settings.applescript_initial_delay,
     default_return=False,
 )
 def update_todo_notes(things_id: str, additional_note: str) -> bool:

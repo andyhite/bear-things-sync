@@ -2,7 +2,6 @@
 
 import os
 from functools import lru_cache
-from typing import Optional
 
 # Disable tokenizers parallelism to avoid fork warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -53,7 +52,7 @@ def calculate_similarity(embedding1: list[float], embedding2: list[float]) -> fl
 
 def find_most_similar(
     target_text: str, candidates: list[dict], threshold: float = 0.85
-) -> Optional[tuple[str, float]]:
+) -> tuple[str, float] | None:
     """
     Find the most similar candidate above threshold.
 

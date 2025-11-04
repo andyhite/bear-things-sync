@@ -151,6 +151,9 @@ tail -f ~/.bear-things-sync/sync_log.txt
 - Used by LaunchAgent daemon for automatic background syncing
 
 **config.py** - Configuration
+- Uses pydantic-settings for type-safe configuration from TOML files
+- Loads from `~/.bear-things-sync/config.toml` (optional)
+- Supports environment variable overrides with `BEAR_THINGS_SYNC_` prefix
 - Paths: Bear database, Things 3 database, state file, log file
 - Todo patterns (regex for incomplete/completed)
 - Default tag: "Bear Sync"
@@ -215,16 +218,16 @@ All tests use mocks to avoid touching real Bear database or Things 3:
 
 ## Python Environment
 
-- **Minimum Python**: 3.9+
+- **Minimum Python**: 3.11+
 - **Package manager**: `uv` (preferred) or `pip`
-- **Dependencies**: None in production (uses only stdlib)
+- **Dependencies**: pydantic, pydantic-settings, sentence-transformers, scikit-learn, watchdog
 - **Dev dependencies**: pytest, pytest-mock, ruff, pyright, pre-commit
 
 ## Important Constraints
 
 - **macOS only**: Requires Bear, Things 3, and AppleScript
 - **Read-only Bear access**: Database opened with `mode=ro` to prevent corruption
-- **fswatch required**: Must be installed via Homebrew
+- **Python 3.11+**: Uses built-in `tomllib` for TOML config support
 - **Line length**: 100 characters max (enforced by ruff)
 - **Type checking**: Basic mode (pyright)
 

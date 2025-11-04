@@ -2,7 +2,6 @@
 
 import time
 from datetime import datetime, timedelta
-from typing import Optional
 
 from .bear import (
     complete_todo_in_note,
@@ -10,12 +9,7 @@ from .bear import (
     get_notes_with_todos,
     uncomplete_todo_in_note,
 )
-from .config import (
-    BIDIRECTIONAL_SYNC,
-    EMBEDDING_CACHE_MAX_AGE_DAYS,
-    SIMILARITY_THRESHOLD,
-    THINGS_SYNC_TAG,
-)
+from .config import settings
 from .things import (
     complete_todo,
     create_todo,
@@ -132,7 +126,7 @@ def _migrate_to_v4(state: dict) -> None:
 
 def _cleanup_embedding_cache(state: dict) -> int:
     """
-    Remove stale embeddings from cache (not seen in EMBEDDING_CACHE_MAX_AGE_DAYS days).
+    Remove stale embeddings from cache (not seen in settings.embedding_cache_max_age_days days).
 
     Args:
         state: State dict containing embedding cache
@@ -144,7 +138,7 @@ def _cleanup_embedding_cache(state: dict) -> int:
         return 0
 
     cache = state["_embedding_cache"]
-    cutoff_date = datetime.now() - timedelta(days=EMBEDDING_CACHE_MAX_AGE_DAYS)
+    cutoff_date = datetime.now() - timedelta(days=settings.embedding_cache_max_age_days)
     removed_count = 0
 
     for cache_key in list(cache.keys()):
@@ -171,8 +165,8 @@ def _cleanup_embedding_cache(state: dict) -> int:
 
 
 def _try_find_duplicate(
-    todo_text: str, target_project: Optional[str], state: dict
-) -> Optional[tuple[str, float]]:
+    todo_text: str, target_project: str | None, state: dict
+) -> tuple[str, float] | None:
     """
     Try to find a duplicate todo in Things using embeddings.
 
@@ -221,7 +215,7 @@ def _try_find_duplicate(
             )
 
         # Find most similar todo above threshold
-        return find_most_similar(todo_text, candidates, threshold=SIMILARITY_THRESHOLD)
+        return find_most_similar(todo_text, candidates, threshold=settings.similarity_threshold)
 
     except Exception as e:
         log(f"Deduplication failed, falling back to normal sync: {e}", "WARNING")
@@ -442,7 +436,7 @@ def execute(source: str = "bear") -> None:
         state["_version"] = 5
 
     # Handle Things 3 → Bear sync (completions only)
-    if source == "things" and BIDIRECTIONAL_SYNC:
+    if source == "things" and settings.bidirectional_sync:
         _sync_from_things(state)
         save_state(state)
         return
@@ -593,7 +587,7 @@ def execute(source: str = "bear") -> None:
 
             # Build tags list: exclude the matched project tag to avoid redundancy
             remaining_tags = [tag for tag in bear_tags if tag != matched_tag]
-            todo_tags = [THINGS_SYNC_TAG] + remaining_tags
+            todo_tags = [settings.sync_tag] + remaining_tags
 
             # Try to find duplicate using embeddings
             duplicate = _try_find_duplicate(todo_title, target_project, state)

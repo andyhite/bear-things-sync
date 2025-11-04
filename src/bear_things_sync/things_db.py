@@ -3,22 +3,16 @@
 import sqlite3
 import time
 import traceback
-from typing import Optional
 
-from .config import (
-    SQLITE_LOCK_INITIAL_DELAY,
-    SQLITE_LOCK_MAX_RETRIES,
-    SQLITE_TIMEOUT,
-    THINGS_DATABASE_PATH,
-)
+from .config import THINGS_DATABASE_PATH, settings
 from .utils import log
 
 # Cache schema validation result to avoid repeated checks
 _schema_validated = False
-_schema_validation_error: Optional[str] = None
+_schema_validation_error: str | None = None
 
 
-def validate_things_schema() -> tuple[bool, Optional[str]]:
+def validate_things_schema() -> tuple[bool, str | None]:
     """
     Validate that the Things database has the expected schema.
 
@@ -46,7 +40,7 @@ def validate_things_schema() -> tuple[bool, Optional[str]]:
 
     try:
         conn = sqlite3.connect(
-            f"file:{THINGS_DATABASE_PATH}?mode=ro", uri=True, timeout=SQLITE_TIMEOUT
+            f"file:{THINGS_DATABASE_PATH}?mode=ro", uri=True, timeout=settings.sqlite_timeout
         )
         cursor = conn.cursor()
 
@@ -122,13 +116,13 @@ def get_completed_things_todos(synced_todo_ids: list[str]) -> set[str]:
         log(f"ERROR: {error_message}")
         return set()
 
-    max_retries = SQLITE_LOCK_MAX_RETRIES
-    retry_delay = SQLITE_LOCK_INITIAL_DELAY
+    max_retries = settings.sqlite_lock_max_retries
+    retry_delay = settings.sqlite_lock_initial_delay
 
     for attempt in range(max_retries):
         try:
             conn = sqlite3.connect(
-                f"file:{THINGS_DATABASE_PATH}?mode=ro", uri=True, timeout=SQLITE_TIMEOUT
+                f"file:{THINGS_DATABASE_PATH}?mode=ro", uri=True, timeout=settings.sqlite_timeout
             )
             cursor = conn.cursor()
 
