@@ -291,6 +291,10 @@ def _sync_from_things(state: dict) -> None:
     """
     log("Syncing completions from Things 3 to Bear...")
 
+    # Get current Bear notes to access note content
+    notes = get_notes_with_todos()
+    notes_by_id = {note["id"]: note for note in notes}
+
     # Collect all synced Things IDs from state
     all_things_ids = []
     note_todos_map = {}  # Map things_id -> (note_id, todo_id, todo_text)
@@ -323,8 +327,15 @@ def _sync_from_things(state: dict) -> None:
         if things_id in note_todos_map:
             note_id, todo_id, todo_text = note_todos_map[things_id]
 
-            # Mark complete in Bear via AppleScript
-            if complete_todo_in_note(note_id, todo_text):
+            # Get note content
+            if note_id not in notes_by_id:
+                log(f"WARNING: Note {note_id} not found in Bear database", "WARNING")
+                continue
+
+            note_content = notes_by_id[note_id]["content"]
+
+            # Mark complete in Bear via x-callback-url
+            if complete_todo_in_note(note_id, todo_text, note_content):
                 # Update state
                 state[note_id]["synced_todos"][todo_id]["completed"] = True
                 state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()

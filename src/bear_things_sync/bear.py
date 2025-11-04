@@ -283,13 +283,14 @@ def _escape_applescript(text: str) -> str:
     return text
 
 
-def complete_todo_in_note(note_id: str, todo_text: str) -> bool:
+def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bool:
     """
-    Mark a todo as complete in a Bear note using AppleScript.
+    Mark a todo as complete in a Bear note using x-callback-url.
 
     Args:
         note_id: Bear note unique identifier
         todo_text: The todo text to find and mark complete
+        note_content: Current note content (from database)
 
     Returns:
         True if successful, False otherwise
@@ -299,18 +300,8 @@ def complete_todo_in_note(note_id: str, todo_text: str) -> bool:
 
     for attempt in range(max_attempts):
         try:
-            # Fetch current note content
-            note_id_escaped = _escape_applescript(note_id)
-            get_content_script = f"""
-            tell application "Bear"
-                return text of note id "{note_id_escaped}"
-            end tell
-            """
-
-            content = _run_applescript(get_content_script)
-
-            # Find and replace the todo
-            lines = content.split("\n")
+            # Find and replace the todo in content
+            lines = note_content.split("\n")
             modified = False
             new_lines = []
 
@@ -337,18 +328,24 @@ def complete_todo_in_note(note_id: str, todo_text: str) -> bool:
                 log(f"WARNING: Todo '{todo_text}' not found in note {note_id}")
                 return False
 
-            # Update note content
+            # Update note content via x-callback-url
             new_content = "\n".join(new_lines)
-            new_content_escaped = _escape_applescript(new_content)
 
-            update_content_script = f"""
-            tell application "Bear"
-                set text of note id "{note_id_escaped}" to "{new_content_escaped}"
-                return true
-            end tell
-            """
+            # URL encode the content and note ID
+            import urllib.parse
 
-            _run_applescript(update_content_script)
+            encoded_text = urllib.parse.quote(new_content)
+            encoded_id = urllib.parse.quote(note_id)
+
+            # Use Bear's x-callback-url scheme to replace note content
+            url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
+
+            # Open the URL to trigger Bear
+            subprocess.run(["open", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+
+            # Give Bear a moment to process
+            time.sleep(0.5)
+
             log(f"Marked todo complete in Bear: '{todo_text}' in note {note_id}")
             return True
 
@@ -367,13 +364,13 @@ def complete_todo_in_note(note_id: str, todo_text: str) -> bool:
         except subprocess.TimeoutExpired:
             if attempt < max_attempts - 1:
                 log(
-                    f"AppleScript timeout (attempt {attempt + 1}/{max_attempts}), "
+                    f"URL scheme timeout (attempt {attempt + 1}/{max_attempts}), "
                     f"retrying in {delay}s..."
                 )
                 time.sleep(delay)
                 delay *= 2
             else:
-                log(f"ERROR: AppleScript timeout after {max_attempts} attempts")
+                log(f"ERROR: URL scheme timeout after {max_attempts} attempts")
                 return False
         except Exception as e:
             log(f"ERROR completing todo in Bear: {e}")
