@@ -18,13 +18,13 @@ class DatabaseEventHandler(FileSystemEventHandler):
     Monitors specific database files and triggers syncs with appropriate throttling.
     """
 
-    def __init__(self, source: str, min_sync_interval: float = 10.0):
+    def __init__(self, source: str, min_sync_interval: float = 2.0):
         """
         Initialize event handler.
 
         Args:
             source: Which database this handler monitors ('bear' or 'things')
-            min_sync_interval: Minimum seconds between syncs to avoid thrashing
+            min_sync_interval: Minimum seconds between syncs to avoid duplicate file events
         """
         super().__init__()
         self.source = source
@@ -46,13 +46,14 @@ class DatabaseEventHandler(FileSystemEventHandler):
             return False
 
         # Check file patterns
+        src_path = str(event.src_path)
         if self.source == "bear":
             # Bear database files
-            if "database.sqlite" not in event.src_path:
+            if "database.sqlite" not in src_path:
                 return False
         else:  # things
             # Things 3 database files
-            if "main.sqlite" not in event.src_path:
+            if "main.sqlite" not in src_path:
                 return False
 
         # Check throttle interval
@@ -141,12 +142,12 @@ def watch() -> None:
     observer = Observer()
 
     # Monitor Bear database
-    bear_handler = DatabaseEventHandler(source="bear", min_sync_interval=10.0)
+    bear_handler = DatabaseEventHandler(source="bear", min_sync_interval=2.0)
     observer.schedule(bear_handler, str(bear_dir), recursive=False)
 
     # Monitor Things 3 database if available
     if things_dir:
-        things_handler = DatabaseEventHandler(source="things", min_sync_interval=10.0)
+        things_handler = DatabaseEventHandler(source="things", min_sync_interval=2.0)
         observer.schedule(things_handler, str(things_dir), recursive=False)
 
     # Start watching

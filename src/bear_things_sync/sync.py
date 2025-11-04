@@ -14,7 +14,6 @@ from .config import (
     BIDIRECTIONAL_SYNC,
     EMBEDDING_CACHE_MAX_AGE_DAYS,
     SIMILARITY_THRESHOLD,
-    SYNC_COOLDOWN,
     THINGS_SYNC_TAG,
 )
 from .things import (
@@ -233,12 +232,12 @@ def _migrate_to_v5(state: dict) -> None:
     """
     Migrate state from v4 to v5 (add bi-directional sync tracking).
 
-    Adds global and per-todo timestamp/source tracking for cooldown logic.
+    Adds per-todo timestamp/source tracking for ping-pong prevention.
 
     Args:
         state: The state dict to migrate (modified in place)
     """
-    # Add global tracking fields
+    # Add global tracking fields for backward compatibility (no longer used)
     if "_last_sync_time" not in state:
         state["_last_sync_time"] = 0
 
@@ -260,31 +259,6 @@ def _migrate_to_v5(state: dict) -> None:
 
     if migrated_todos > 0:
         log(f"Migrated {migrated_todos} todos to v5 format with bi-directional sync tracking")
-
-
-def should_skip_sync(state: dict, source: str) -> bool:
-    """
-    Check if we should skip this sync to avoid circular updates.
-
-    Args:
-        state: Current state dict
-        source: Which app triggered the sync ('bear' or 'things')
-
-    Returns:
-        True if sync should be skipped, False otherwise
-    """
-    last_sync_time = state.get("_last_sync_time", 0)
-    last_sync_source = state.get("_last_sync_source")
-    time_since_last = time.time() - last_sync_time
-
-    # Skip if we just synced from the opposite source
-    # (i.e., we probably triggered this change)
-    if time_since_last < SYNC_COOLDOWN:
-        opposite_source = "things" if source == "bear" else "bear"
-        if last_sync_source == opposite_source:
-            return True
-
-    return False
 
 
 def _sync_from_things(state: dict) -> None:
@@ -339,6 +313,19 @@ def _sync_from_things(state: dict) -> None:
     for things_id in newly_completed_ids:
         note_id, todo_id, todo_text = incomplete_todos_map[things_id]
 
+        # Check for ping-pong: skip if Bear just completed this todo
+        todo_state = state[note_id]["synced_todos"][todo_id]
+        last_modified_source = todo_state.get("last_modified_source")
+        last_modified_time = todo_state.get("last_modified_time", 0)
+        time_since_last = time.time() - last_modified_time
+
+        if last_modified_source == "bear" and time_since_last < 5:
+            log(
+                f"Skipping completion sync for '{todo_text}' "
+                f"(just completed by Bear {time_since_last:.1f}s ago)"
+            )
+            continue
+
         # Get note content
         if note_id not in notes_by_id:
             log(f"WARNING: Note {note_id} not found in Bear database", "WARNING")
@@ -364,6 +351,20 @@ def _sync_from_things(state: dict) -> None:
     uncompleted_count = 0
     for things_id in newly_uncompleted_ids:
         note_id, todo_id, todo_text = completed_todos_map[things_id]
+
+        # Check for ping-pong: skip if Bear just uncompleted this todo
+        # (Note: currently Bear→Things doesn't sync un-completions, so this is future-proofing)
+        todo_state = state[note_id]["synced_todos"][todo_id]
+        last_modified_source = todo_state.get("last_modified_source")
+        last_modified_time = todo_state.get("last_modified_time", 0)
+        time_since_last = time.time() - last_modified_time
+
+        if last_modified_source == "bear" and time_since_last < 5:
+            log(
+                f"Skipping un-completion sync for '{todo_text}' "
+                f"(just uncompleted by Bear {time_since_last:.1f}s ago)"
+            )
+            continue
 
         # Get note content
         if note_id not in notes_by_id:
@@ -434,17 +435,9 @@ def sync(source: str = "bear") -> None:
         _migrate_to_v5(state)
         state["_version"] = 5
 
-    # Check cooldown to prevent circular syncs
-    if BIDIRECTIONAL_SYNC and should_skip_sync(state, source):
-        log(f"Skipping sync (cooldown period after {state.get('_last_sync_source')} sync)")
-        return
-
     # Handle Things 3 → Bear sync (completions only)
     if source == "things" and BIDIRECTIONAL_SYNC:
         _sync_from_things(state)
-        # Update sync timestamp
-        state["_last_sync_time"] = time.time()
-        state["_last_sync_source"] = "things"
         save_state(state)
         return
 
@@ -528,11 +521,25 @@ def sync(source: str = "bear") -> None:
                 and current_todo["completed"]
                 and not todo_state.get("completed", False)
             ):
+                # Check for ping-pong: skip if Things just completed this todo
+                last_modified_source = todo_state.get("last_modified_source")
+                last_modified_time = todo_state.get("last_modified_time", 0)
+                time_since_last = time.time() - last_modified_time
+
+                if last_modified_source == "things" and time_since_last < 5:
+                    log(
+                        f"Skipping completion sync for '{current_todo['text']}' "
+                        f"(just completed by Things {time_since_last:.1f}s ago)"
+                    )
+                    continue
+
                 # If todo is now completed in Bear but not marked complete in our state
                 things_id = todo_state.get("things_id")
                 if things_id:
                     if complete_todo(things_id):
                         state[note_id]["synced_todos"][todo_id]["completed"] = True
+                        state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
+                        state[note_id]["synced_todos"][todo_id]["last_modified_source"] = "bear"
                         completed_count += 1
                         log(f"✓ Completed: '{current_todo['text']}' in '{note_title}'")
                     else:
