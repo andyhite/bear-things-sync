@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from bear_things_sync.sync import sync
+from bear_things_sync.sync import execute
 
 
 class TestSync:
@@ -42,7 +42,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Verify Things API was called
         assert mock_subprocess.called
@@ -65,7 +65,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should not save state when no notes
         assert not state_file.exists()
@@ -113,7 +113,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should NOT call Things create API since already synced
         # get_projects calls subprocess once, but create_todo should not
@@ -172,7 +172,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should call Things API to complete the todo
         applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
@@ -220,7 +220,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Verify create was called with project
         create_calls = [
@@ -258,7 +258,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Verify tags were converted
         create_calls = [
@@ -293,7 +293,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should not create any todos
         create_calls = [
@@ -340,7 +340,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Verify state was migrated
         migrated_state = json.loads(state_file.read_text())
@@ -376,7 +376,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Verify Bear callback URL in notes
         create_calls = [
@@ -417,7 +417,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should create 2 todos
         create_calls = [
@@ -465,7 +465,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should not save failed todo in state
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
@@ -528,7 +528,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should not mark as complete in state
         state = json.loads(state_file.read_text())
@@ -567,7 +567,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Check log for summary
         if log_file.exists():
@@ -603,7 +603,7 @@ class TestSync:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        sync()
+        execute()
 
         # Should create todo without project
         create_calls = [
@@ -666,9 +666,9 @@ class TestDeduplication:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        from bear_things_sync.sync import sync
+        from bear_things_sync.sync import execute
 
-        sync()
+        execute()
 
         # Verify subprocess was called to update notes (not create todo)
         applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
@@ -719,9 +719,9 @@ class TestDeduplication:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        from bear_things_sync.sync import sync
+        from bear_things_sync.sync import execute
 
-        sync()
+        execute()
 
         # Verify subprocess was called to create todo
         applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
@@ -764,9 +764,9 @@ class TestDeduplication:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        from bear_things_sync.sync import sync
+        from bear_things_sync.sync import execute
 
-        sync()
+        execute()
 
         # Should create todo without checking for duplicates
         applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
@@ -815,9 +815,9 @@ class TestDeduplication:
         log_file = tmp_path / "log.txt"
         mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
 
-        from bear_things_sync.sync import sync
+        from bear_things_sync.sync import execute
 
-        sync()
+        execute()
 
         # Verify get_incomplete_todos was called with project="Work"
         mock_get_incomplete.assert_called_with(project="Work")

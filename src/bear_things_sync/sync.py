@@ -404,7 +404,7 @@ def _sync_from_things(state: dict) -> None:
         log("No completion changes detected in Things 3")
 
 
-def sync(source: str = "bear") -> None:
+def execute(source: str = "bear") -> None:
     """
     Main sync function with bi-directional support.
 

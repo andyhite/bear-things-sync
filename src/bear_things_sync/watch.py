@@ -7,7 +7,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import BEAR_DATABASE_PATH, BIDIRECTIONAL_SYNC, THINGS_DATABASE_PATH
-from .sync import sync
+from .sync import execute
 from .utils import log
 
 
@@ -82,7 +82,7 @@ class DatabaseEventHandler(FileSystemEventHandler):
         log(f"{self.source.title()} database changed: {event.src_path}")
 
         try:
-            sync(source=self.source)
+            execute(source=self.source)
             self.last_sync_time = time.time()
         except Exception as e:
             log(f"ERROR: Sync from {self.source} failed: {e}", "ERROR")
@@ -126,7 +126,7 @@ def watch() -> None:
     # Run initial sync
     log("Running initial sync...")
     try:
-        sync(source="bear")
+        execute(source="bear")
     except Exception as e:
         log(f"Initial sync failed: {e}", "ERROR")
         import traceback

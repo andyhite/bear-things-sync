@@ -13,23 +13,23 @@ class TestCLI:
         # Mock sys.argv to simulate running without a subcommand
         mocker.patch.object(sys, "argv", ["bear-things-sync"])
 
-        # Mock the sync function where it's defined (imported by cli.py)
-        mock_sync = mocker.patch("bear_things_sync.sync.sync")
+        # Mock the sync execute function where it's defined (imported by cli.py)
+        mock_execute = mocker.patch("bear_things_sync.sync.execute")
 
         # Run the CLI
         main()
 
-        # Verify sync was called
-        assert mock_sync.called
+        # Verify execute was called
+        assert mock_execute.called
 
     def test_explicit_sync_command(self, mocker):
         """Explicit sync command should still work."""
         mocker.patch.object(sys, "argv", ["bear-things-sync", "sync"])
-        mock_sync = mocker.patch("bear_things_sync.sync.sync")
+        mock_execute = mocker.patch("bear_things_sync.sync.execute")
 
         main()
 
-        assert mock_sync.called
+        assert mock_execute.called
 
     def test_install_command(self, mocker):
         """Install command should call install."""

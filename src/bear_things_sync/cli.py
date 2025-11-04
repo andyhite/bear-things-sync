@@ -100,12 +100,12 @@ def main() -> None:
 
     # Route to appropriate function
     if args.command == "sync":
-        from .sync import sync
+        from .sync import execute
 
         try:
             # Pass source parameter if available
             source = getattr(args, "source", "bear")
-            sync(source=source)
+            execute(source=source)
         except Exception as e:
             from .utils import log
 

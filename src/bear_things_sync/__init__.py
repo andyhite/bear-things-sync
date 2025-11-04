@@ -5,7 +5,7 @@ Automatically syncs uncompleted todos from Bear notes to Things 3.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .sync import sync
+from .sync import execute as sync
 
 try:
     __version__ = version("bear-things-sync")
