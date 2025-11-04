@@ -1,11 +1,16 @@
 """Bear note database operations."""
 
+import re
 import sqlite3
+import subprocess
 import time
 import traceback
 from typing import Any, Optional
 
 from .config import (
+    APPLESCRIPT_INITIAL_DELAY,
+    APPLESCRIPT_MAX_RETRIES,
+    APPLESCRIPT_TIMEOUT,
     BEAR_DATABASE_PATH,
     SQLITE_LOCK_INITIAL_DELAY,
     SQLITE_LOCK_MAX_RETRIES,
@@ -233,3 +238,146 @@ def extract_todos(content: str) -> list[dict[str, Any]]:
             todos.append({"text": match.group(1).strip(), "line": line_num, "completed": True})
 
     return todos
+
+
+def _run_applescript(script: str, timeout: int = APPLESCRIPT_TIMEOUT) -> str:
+    """
+    Execute an AppleScript and return the output.
+
+    Args:
+        script: AppleScript code to execute
+        timeout: Timeout in seconds
+
+    Returns:
+        Script output as string
+
+    Raises:
+        subprocess.CalledProcessError: If script execution fails
+    """
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=timeout,
+    )
+    return result.stdout.strip()
+
+
+def _escape_applescript(text: str) -> str:
+    """
+    Escape special characters for AppleScript string.
+
+    Args:
+        text: Text to escape
+
+    Returns:
+        Escaped text safe for AppleScript
+    """
+    # Order matters: escape backslashes first
+    text = text.replace("\\", "\\\\")  # Backslash
+    text = text.replace('"', '\\"')  # Double quote
+    text = text.replace("\n", "\\n")  # Newline
+    text = text.replace("\r", "\\r")  # Carriage return
+    text = text.replace("\t", "\\t")  # Tab
+    return text
+
+
+def complete_todo_in_note(note_id: str, todo_text: str) -> bool:
+    """
+    Mark a todo as complete in a Bear note using AppleScript.
+
+    Args:
+        note_id: Bear note unique identifier
+        todo_text: The todo text to find and mark complete
+
+    Returns:
+        True if successful, False otherwise
+    """
+    max_attempts = APPLESCRIPT_MAX_RETRIES
+    delay = APPLESCRIPT_INITIAL_DELAY
+
+    for attempt in range(max_attempts):
+        try:
+            # Fetch current note content
+            note_id_escaped = _escape_applescript(note_id)
+            get_content_script = f"""
+            tell application "Bear"
+                return text of note id "{note_id_escaped}"
+            end tell
+            """
+
+            content = _run_applescript(get_content_script)
+
+            # Find and replace the todo
+            lines = content.split("\n")
+            modified = False
+            new_lines = []
+
+            for line in lines:
+                line_stripped = line.strip()
+
+                # Check if this line contains the todo we're looking for
+                # Try both "- [ ]" and "* [ ]" patterns
+                for prefix in ["-", "*"]:
+                    pattern = rf"^{re.escape(prefix)}\s+\[ \]\s+(.+)$"
+                    match = re.match(pattern, line_stripped)
+
+                    if match and match.group(1).strip() == todo_text:
+                        # Replace [ ] with [x]
+                        new_line = re.sub(r"\[ \]", "[x]", line, count=1)
+                        new_lines.append(new_line)
+                        modified = True
+                        break
+                else:
+                    # No match, keep original line
+                    new_lines.append(line)
+
+            if not modified:
+                log(f"WARNING: Todo '{todo_text}' not found in note {note_id}")
+                return False
+
+            # Update note content
+            new_content = "\n".join(new_lines)
+            new_content_escaped = _escape_applescript(new_content)
+
+            update_content_script = f"""
+            tell application "Bear"
+                set text of note id "{note_id_escaped}" to "{new_content_escaped}"
+                return true
+            end tell
+            """
+
+            _run_applescript(update_content_script)
+            log(f"Marked todo complete in Bear: '{todo_text}' in note {note_id}")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            if attempt < max_attempts - 1:
+                log(
+                    f"Attempt {attempt + 1}/{max_attempts} failed for complete_todo_in_note, "
+                    f"retrying in {delay}s..."
+                )
+                time.sleep(delay)
+                delay *= 2
+            else:
+                log(f"ERROR: Failed to complete todo in Bear after {max_attempts} attempts: {e}")
+                log(traceback.format_exc())
+                return False
+        except subprocess.TimeoutExpired:
+            if attempt < max_attempts - 1:
+                log(
+                    f"AppleScript timeout (attempt {attempt + 1}/{max_attempts}), "
+                    f"retrying in {delay}s..."
+                )
+                time.sleep(delay)
+                delay *= 2
+            else:
+                log(f"ERROR: AppleScript timeout after {max_attempts} attempts")
+                return False
+        except Exception as e:
+            log(f"ERROR completing todo in Bear: {e}")
+            log(traceback.format_exc())
+            return False
+
+    return False

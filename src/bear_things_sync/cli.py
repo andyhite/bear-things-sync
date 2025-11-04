@@ -44,9 +44,15 @@ def main() -> None:
     )
 
     # Sync command
-    subparsers.add_parser(
+    sync_parser = subparsers.add_parser(
         "sync",
         help="Run a one-time sync of todos from Bear to Things 3",
+    )
+    sync_parser.add_argument(
+        "--source",
+        choices=["bear", "things"],
+        default="bear",
+        help="Which app triggered the sync (bear or things)",
     )
 
     # Install command
@@ -91,7 +97,9 @@ def main() -> None:
         from .sync import sync
 
         try:
-            sync()
+            # Pass source parameter if available
+            source = getattr(args, "source", "bear")
+            sync(source=source)
         except Exception as e:
             from .utils import log
 

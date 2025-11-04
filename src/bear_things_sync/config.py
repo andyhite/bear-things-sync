@@ -101,16 +101,6 @@ def _prompt_for_bear_database() -> Optional[Path]:
     return None
 
 
-# Bear database - use discovery as primary method
-_discovered_db = discover_bear_database()
-if _discovered_db:
-    BEAR_DATABASE_PATH = _discovered_db
-else:
-    # If discovery fails, prompt user and provide placeholder
-    _prompt_for_bear_database()
-    # Use placeholder path that will fail with clear error message
-    BEAR_DATABASE_PATH = Path.home() / ".bear-things-sync" / "BEAR_DATABASE_NOT_FOUND"
-
 # Todo patterns to match
 TODO_PATTERNS = {
     "incomplete": re.compile(r"^[-*]\s+\[ \]\s+(.+)$"),  # Matches "- [ ] task" or "* [ ] task"
@@ -164,8 +154,66 @@ EMBEDDING_CACHE_MAX_AGE_DAYS = _user_config.get(
     "embedding_cache_max_age_days", 7
 )  # Expire old embeddings
 
+# Bi-directional sync configuration
+BIDIRECTIONAL_SYNC = _user_config.get("bidirectional_sync", True)  # Enable bi-directional sync
+SYNC_COOLDOWN = _user_config.get("sync_cooldown", 5)  # Cooldown in seconds to prevent ping-pong
+
 # Ensure data directory exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def discover_things_database() -> Optional[Path]:
+    """
+    Try to discover Things 3 database location.
+
+    Returns:
+        Path to Things 3 database if found, None otherwise
+    """
+    # First, check if user has manually configured the path
+    user_config = load_user_config()
+    if "things_database_path" in user_config:
+        manual_path = Path(user_config["things_database_path"]).expanduser()
+        if manual_path.exists():
+            return manual_path
+        else:
+            print(
+                f"WARNING: Configured Things database path does not exist: {manual_path}",
+                file=sys.stderr,
+            )
+
+    # Auto-discovery: search Group Containers for Things
+    group_containers = Path.home() / "Library/Group Containers"
+    if not group_containers.exists():
+        return None
+
+    # Search for Things container (JLMPQHK86H.com.culturedcode.ThingsMac)
+    for container in group_containers.glob("*.com.culturedcode.ThingsMac"):
+        # Look for ThingsData-* directories
+        for data_dir in container.glob("ThingsData-*"):
+            db_path = data_dir / "Things Database.thingsdatabase/main.sqlite"
+            if db_path.exists():
+                return db_path
+
+    return None
+
+
+# Bear database - use discovery as primary method
+_discovered_db = discover_bear_database()
+if _discovered_db:
+    BEAR_DATABASE_PATH = _discovered_db
+else:
+    # If discovery fails, prompt user and provide placeholder
+    _prompt_for_bear_database()
+    # Use placeholder path that will fail with clear error message
+    BEAR_DATABASE_PATH = Path.home() / ".bear-things-sync" / "BEAR_DATABASE_NOT_FOUND"
+
+# Things 3 database - use discovery
+_discovered_things_db = discover_things_database()
+if _discovered_things_db:
+    THINGS_DATABASE_PATH = _discovered_things_db
+else:
+    # Use placeholder path (bi-directional sync will be disabled if Things DB not found)
+    THINGS_DATABASE_PATH = Path.home() / ".bear-things-sync" / "THINGS_DATABASE_NOT_FOUND"
 
 
 def get_bear_database_directory() -> str:

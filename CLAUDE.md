@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bear Things Sync is a macOS daemon that automatically syncs uncompleted todos from Bear notes to Things 3. It uses `fswatch` to monitor Bear's SQLite database for changes and triggers syncs via AppleScript.
+Bear Things Sync is a macOS daemon that provides bi-directional todo synchronization between Bear and Things 3. It monitors both Bear's and Things 3's SQLite databases using `fswatch` and syncs changes:
+
+- **Bear → Things 3**: New uncompleted todos from Bear notes are created in Things 3
+- **Things 3 → Bear**: Completed todos in Things 3 are marked complete in Bear via AppleScript
+- **Cooldown mechanism**: Prevents circular updates with a 5-second cooldown window
 
 ## Development Commands
 
@@ -92,17 +96,26 @@ tail -f ~/.bear-things-sync/sync_log.txt
 
 ### Core Data Flow
 
-1. **File Watcher** (`watch_bear.sh`) → Monitors Bear database with `fswatch`
-2. **Sync Trigger** → Calls `bear-things-sync` on database changes
+**Bear → Things 3 Sync:**
+1. **File Watcher** (`watch_sync.sh`) → Monitors Bear database with `fswatch`
+2. **Sync Trigger** → Calls `bear-things-sync --source bear` on database changes
 3. **Bear Module** (`bear.py`) → Reads Bear's SQLite database (read-only)
 4. **Sync Logic** (`sync.py`) → Orchestrates the sync process
 5. **Things Module** (`things.py`) → Creates/completes todos via AppleScript
 
+**Things 3 → Bear Sync:**
+1. **File Watcher** (`watch_sync.sh`) → Monitors Things 3 database with `fswatch`
+2. **Sync Trigger** → Calls `bear-things-sync --source things` on database changes
+3. **Things DB Module** (`things_db.py`) → Queries Things 3's SQLite database for completed todos
+4. **Sync Logic** (`sync.py`) → Checks cooldown, finds completed todos
+5. **Bear AppleScript** (`bear.py`) → Marks todos complete in Bear notes via AppleScript
+
 ### Key Modules
 
-**bear.py** - Bear database operations
+**bear.py** - Bear database and AppleScript operations
 - `get_notes_with_todos()`: Queries Bear's SQLite database for notes containing todos
 - `extract_todos()`: Parses note content for todo patterns (`- [ ]` or `* [ ]`)
+- `complete_todo_in_note()`: Marks todos complete in Bear via AppleScript (for bi-directional sync)
 - Uses read-only SQLite connection to prevent corruption
 - Extracts tags from `ZSFNOTETAG` table via join
 
@@ -112,18 +125,28 @@ tail -f ~/.bear-things-sync/sync_log.txt
 - `complete_todo()`: Marks todos as complete by Things ID
 - All operations use `subprocess.run()` with AppleScript
 
+**things_db.py** - Things 3 database operations (read-only)
+- `get_completed_things_todos()`: Queries Things 3's SQLite database for completion status
+- `validate_things_schema()`: Validates database compatibility
+- Uses read-only connection with retry logic for lock handling
+
 **sync.py** - Main orchestration logic
-- Maintains state in `~/.bear-things-sync/sync_state.json`
-- Tracks synced todos by unique ID: `{note_id}:{line_number}`
-- Handles state migration from old list format to dict format
-- Syncs new incomplete todos to Things 3
-- Detects completed todos in Bear and marks them complete in Things 3
+- Maintains state in `~/.bear-things-sync/sync_state.json` (version 5)
+- Tracks synced todos by content-based ID with timestamp tracking
+- Handles state migration through v5 (bi-directional sync support)
+- Routes syncs based on `source` parameter (bear or things)
+- Implements cooldown logic to prevent circular updates
+- **Bear → Things**: Syncs new incomplete todos, marks completed todos
+- **Things → Bear**: Marks completed todos in Bear via AppleScript
 - Cleans up state for deleted notes
 
 **config.py** - Configuration
-- Paths: Bear database, state file, log file
+- Paths: Bear database, Things 3 database, state file, log file
 - Todo patterns (regex for incomplete/completed)
 - Default tag: "Bear Sync"
+- Bi-directional sync configuration (enabled by default)
+- Sync cooldown setting (5 seconds default)
+- Auto-discovery for both Bear and Things 3 databases
 
 **utils.py** - Utility functions
 - `pascal_to_title_case()`: Converts `TrainingTools` → `Training Tools`
@@ -134,16 +157,22 @@ tail -f ~/.bear-things-sync/sync_log.txt
 
 ### State Management
 
-The sync state is stored in `~/.bear-things-sync/sync_state.json`:
+The sync state is stored in `~/.bear-things-sync/sync_state.json` (version 5):
 
 ```python
 {
+  "_version": 5,
+  "_last_sync_time": 1234567890.123,  # Unix timestamp
+  "_last_sync_source": "bear",  # or "things"
   "note_id_123": {
     "title": "Note Title",
     "synced_todos": {
-      "note_id_123:5": {  # unique todo ID (note:line)
+      "note_id_123:hash": {  # content-based unique ID
         "things_id": "ABC123",
-        "completed": false
+        "completed": false,
+        "text": "Todo text",
+        "last_modified_time": 1234567890.123,
+        "last_modified_source": "bear"
       }
     }
   }
@@ -152,7 +181,9 @@ The sync state is stored in `~/.bear-things-sync/sync_state.json`:
 
 This allows:
 - Duplicate prevention (don't re-sync same todo)
-- Completion tracking (mark complete in Things when completed in Bear)
+- Bi-directional completion tracking with cooldown to prevent circular updates
+- Content-based IDs that survive text edits
+- Timestamp tracking for conflict resolution
 - State cleanup when notes are deleted
 
 ### Tag and Project Matching

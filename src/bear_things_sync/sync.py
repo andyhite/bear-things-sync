@@ -1,10 +1,17 @@
 """Main sync logic for Bear to Things 3."""
 
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from .bear import extract_todos, get_notes_with_todos
-from .config import EMBEDDING_CACHE_MAX_AGE_DAYS, SIMILARITY_THRESHOLD, THINGS_SYNC_TAG
+from .bear import complete_todo_in_note, extract_todos, get_notes_with_todos
+from .config import (
+    BIDIRECTIONAL_SYNC,
+    EMBEDDING_CACHE_MAX_AGE_DAYS,
+    SIMILARITY_THRESHOLD,
+    SYNC_COOLDOWN,
+    THINGS_SYNC_TAG,
+)
 from .things import (
     complete_todo,
     create_todo,
@@ -12,6 +19,7 @@ from .things import (
     get_projects,
     update_todo_notes,
 )
+from .things_db import get_completed_things_todos
 from .utils import (
     cleanup_state,
     find_todo_by_fuzzy_match,
@@ -216,14 +224,134 @@ def _try_find_duplicate(
         return None
 
 
-def sync() -> None:
+def _migrate_to_v5(state: dict) -> None:
     """
-    Main sync function.
+    Migrate state from v4 to v5 (add bi-directional sync tracking).
 
-    - Syncs new incomplete todos from Bear to Things 3
-    - Marks todos as complete in Things 3 if completed in Bear
+    Adds global and per-todo timestamp/source tracking for cooldown logic.
+
+    Args:
+        state: The state dict to migrate (modified in place)
     """
-    log("Starting Bear to Things sync...")
+    # Add global tracking fields
+    if "_last_sync_time" not in state:
+        state["_last_sync_time"] = 0
+
+    if "_last_sync_source" not in state:
+        state["_last_sync_source"] = "bear"
+
+    # Add per-todo tracking fields
+    migrated_todos = 0
+    for note_id in list(state.keys()):
+        if note_id.startswith("_"):
+            continue
+
+        if "synced_todos" in state[note_id]:
+            for _todo_id, todo_state in state[note_id]["synced_todos"].items():
+                if "last_modified_time" not in todo_state:
+                    todo_state["last_modified_time"] = 0
+                    todo_state["last_modified_source"] = "bear"
+                    migrated_todos += 1
+
+    if migrated_todos > 0:
+        log(f"Migrated {migrated_todos} todos to v5 format with bi-directional sync tracking")
+
+
+def should_skip_sync(state: dict, source: str) -> bool:
+    """
+    Check if we should skip this sync to avoid circular updates.
+
+    Args:
+        state: Current state dict
+        source: Which app triggered the sync ('bear' or 'things')
+
+    Returns:
+        True if sync should be skipped, False otherwise
+    """
+    last_sync_time = state.get("_last_sync_time", 0)
+    last_sync_source = state.get("_last_sync_source")
+    time_since_last = time.time() - last_sync_time
+
+    # Skip if we just synced from the opposite source
+    # (i.e., we probably triggered this change)
+    if time_since_last < SYNC_COOLDOWN:
+        opposite_source = "things" if source == "bear" else "bear"
+        if last_sync_source == opposite_source:
+            return True
+
+    return False
+
+
+def _sync_from_things(state: dict) -> None:
+    """
+    Handle Things 3 → Bear sync (completions only).
+
+    Args:
+        state: Current state dict
+    """
+    log("Syncing completions from Things 3 to Bear...")
+
+    # Collect all synced Things IDs from state
+    all_things_ids = []
+    note_todos_map = {}  # Map things_id -> (note_id, todo_id, todo_text)
+
+    for note_id, note_data in state.items():
+        if note_id.startswith("_"):
+            continue
+
+        if "synced_todos" in note_data:
+            for todo_id, todo_state in note_data["synced_todos"].items():
+                things_id = todo_state.get("things_id")
+                if things_id and not todo_state.get("completed", False):
+                    all_things_ids.append(things_id)
+                    note_todos_map[things_id] = (note_id, todo_id, todo_state.get("text", ""))
+
+    if not all_things_ids:
+        log("No synced incomplete todos to check")
+        return
+
+    # Query Things 3 for completed todos
+    completed_ids = get_completed_things_todos(all_things_ids)
+
+    if not completed_ids:
+        log("No todos completed in Things 3")
+        return
+
+    # Mark corresponding todos complete in Bear
+    completed_count = 0
+    for things_id in completed_ids:
+        if things_id in note_todos_map:
+            note_id, todo_id, todo_text = note_todos_map[things_id]
+
+            # Mark complete in Bear via AppleScript
+            if complete_todo_in_note(note_id, todo_text):
+                # Update state
+                state[note_id]["synced_todos"][todo_id]["completed"] = True
+                state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
+                state[note_id]["synced_todos"][todo_id]["last_modified_source"] = "things"
+                completed_count += 1
+                log(f"✓ Completed in Bear: '{todo_text}'")
+            else:
+                log(f"✗ Failed to complete in Bear: '{todo_text}'")
+
+    if completed_count > 0:
+        summary = f"Completed {pluralize(completed_count, 'todo')} in Bear from Things 3"
+        log(summary)
+        send_notification("Bear Things Sync", summary, sound=False)
+
+
+def sync(source: str = "bear") -> None:
+    """
+    Main sync function with bi-directional support.
+
+    Args:
+        source: Which app triggered the sync ('bear' or 'things')
+
+    Behavior based on source:
+    - 'bear': Syncs new incomplete todos from Bear to Things 3, marks completed in Things
+    - 'things': Marks todos complete in Bear if completed in Things 3
+    """
+    log(f"Starting sync (triggered by {source.title()})...")
 
     state = load_state()
 
@@ -242,6 +370,28 @@ def sync() -> None:
         log("Migrating state format to v4 (embedding cache)...", "INFO")
         _migrate_to_v4(state)
         state["_version"] = 4
+
+    # Migrate to version 5: add bi-directional sync tracking
+    if state.get("_version", 4) < 5:
+        log("Migrating state format to v5 (bi-directional sync)...", "INFO")
+        _migrate_to_v5(state)
+        state["_version"] = 5
+
+    # Check cooldown to prevent circular syncs
+    if BIDIRECTIONAL_SYNC and should_skip_sync(state, source):
+        log(f"Skipping sync (cooldown period after {state.get('_last_sync_source')} sync)")
+        return
+
+    # Handle Things 3 → Bear sync (completions only)
+    if source == "things" and BIDIRECTIONAL_SYNC:
+        _sync_from_things(state)
+        # Update sync timestamp
+        state["_last_sync_time"] = time.time()
+        state["_last_sync_source"] = "things"
+        save_state(state)
+        return
+
+    # Handle Bear → Things 3 sync (default behavior)
 
     notes = get_notes_with_todos()
 
@@ -435,6 +585,10 @@ def sync() -> None:
     cache_removed = _cleanup_embedding_cache(state)
     if cache_removed > 0:
         log(f"Cleaned up {pluralize(cache_removed, 'stale embedding')} from cache")
+
+    # Update sync timestamp for Bear sync
+    state["_last_sync_time"] = time.time()
+    state["_last_sync_source"] = "bear"
 
     save_state(state)
 
