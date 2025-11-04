@@ -3,7 +3,13 @@
 import subprocess
 from unittest.mock import MagicMock
 
-from bear_things_sync.things import complete_todo, create_todo, get_projects
+from bear_things_sync.things import (
+    complete_todo,
+    create_todo,
+    get_incomplete_todos,
+    get_projects,
+    update_todo_notes,
+)
 
 
 class TestGetProjects:
@@ -239,3 +245,145 @@ class TestCompleteTodo:
 
         applescript = mock_run.call_args[0][0][2]
         assert '"ABC123-DEF456"' in applescript
+
+
+class TestGetIncompleteTodos:
+    """Test getting incomplete todos from Things 3."""
+
+    def test_get_all_incomplete_todos(self, mocker):
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mock_result = MagicMock()
+        # Simulate output: |id~name~project|id~name~project
+        mock_result.stdout = "|ABC123~Review slides~Work|XYZ789~Write report~Personal"
+        mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
+
+        todos = get_incomplete_todos()
+
+        assert len(todos) == 2
+        assert todos[0] == {"id": "ABC123", "name": "Review slides", "project": "Work"}
+        assert todos[1] == {"id": "XYZ789", "name": "Write report", "project": "Personal"}
+
+    def test_get_incomplete_todos_project_scoped(self, mocker):
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mock_result = MagicMock()
+        # Project-scoped query only returns id~name (no project)
+        mock_result.stdout = "|ABC123~Review slides|DEF456~Update documentation"
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
+
+        todos = get_incomplete_todos(project="Work")
+
+        assert len(todos) == 2
+        assert todos[0] == {"id": "ABC123", "name": "Review slides"}
+        assert todos[1] == {"id": "DEF456", "name": "Update documentation"}
+        # Verify AppleScript contains project filter
+        applescript = mock_run.call_args[0][0][2]
+        assert 'project whose name is "Work"' in applescript
+
+    def test_get_incomplete_todos_empty_result(self, mocker):
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
+
+        todos = get_incomplete_todos()
+
+        assert todos == []
+
+    def test_get_incomplete_todos_things_not_available(self, mocker):
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=False)
+        mocker.patch("bear_things_sync.things.log")
+
+        todos = get_incomplete_todos()
+
+        assert todos == []
+
+    def test_get_incomplete_todos_subprocess_error(self, mocker):
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mocker.patch(
+            "bear_things_sync.things.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "osascript", stderr="Error"),
+        )
+        mocker.patch("bear_things_sync.things.log")
+
+        todos = get_incomplete_todos()
+
+        assert todos == []
+
+    def test_get_incomplete_todos_with_no_project(self, mocker):
+        """Test todos that don't belong to any project."""
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mock_result = MagicMock()
+        # Empty project field
+        mock_result.stdout = "|ABC123~Buy groceries~"
+        mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
+
+        todos = get_incomplete_todos()
+
+        assert len(todos) == 1
+        assert todos[0] == {"id": "ABC123", "name": "Buy groceries"}
+
+    def test_escapes_project_name(self, mocker):
+        """Test that project names with special characters are escaped."""
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+        mock_result = MagicMock()
+        mock_result.stdout = "|ABC~test"
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
+
+        get_incomplete_todos(project='Project "Special"')
+
+        applescript = mock_run.call_args[0][0][2]
+        assert r"\"" in applescript  # Should escape quotes
+
+
+class TestUpdateTodoNotes:
+    """Test updating todo notes in Things 3."""
+
+    def test_successful_update(self, mocker):
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run")
+
+        result = update_todo_notes("ABC123", "\n\nMerged with Bear todo")
+
+        assert result is True
+        mock_run.assert_called_once()
+        applescript = mock_run.call_args[0][0][2]
+        assert 'to do id "ABC123"' in applescript
+        assert "currentNotes" in applescript
+        assert "Merged with Bear todo" in applescript
+
+    def test_escapes_special_characters(self, mocker):
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run")
+
+        update_todo_notes("ABC123", 'Note with "quotes" and \\backslash')
+
+        applescript = mock_run.call_args[0][0][2]
+        assert r"\"" in applescript  # Escaped quotes
+        assert r"\\" in applescript  # Escaped backslashes
+
+    def test_subprocess_error_with_retry(self, mocker):
+        mocker.patch("bear_things_sync.things.time.sleep")
+        mocker.patch(
+            "bear_things_sync.things.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "osascript", stderr="Todo not found"),
+        )
+        mocker.patch("bear_things_sync.things.log")
+
+        result = update_todo_notes("INVALID", "Some note")
+
+        assert result is False
+
+    def test_escapes_newlines(self, mocker):
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run")
+
+        update_todo_notes("ABC123", "Line 1\nLine 2\nLine 3")
+
+        applescript = mock_run.call_args[0][0][2]
+        assert "\\n" in applescript  # Escaped newlines
+
+    def test_updates_with_empty_note(self, mocker):
+        """Test updating with empty note (edge case)."""
+        mock_run = mocker.patch("bear_things_sync.things.subprocess.run")
+
+        result = update_todo_notes("ABC123", "")
+
+        assert result is True
+        mock_run.assert_called_once()

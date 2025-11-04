@@ -150,6 +150,99 @@ def get_projects() -> dict[str, str]:
         return {}
 
 
+def get_incomplete_todos(project: Optional[str] = None) -> list[dict]:
+    """
+    Get all incomplete todos from Things 3, optionally filtered by project.
+
+    Args:
+        project: Project name to filter by (None = all incomplete todos)
+
+    Returns:
+        List of dicts with keys: id, name, project (if applicable)
+    """
+    if not is_things_available():
+        log("WARNING: Things 3 is not running. Cannot query incomplete todos.")
+        return []
+
+    if project:
+        # Project-scoped query
+        project_escaped = project.replace("\\", "\\\\").replace('"', '\\"')
+        applescript = f"""
+        tell application "Things3"
+            set todoList to {{}}
+            set targetProject to first project whose name is "{project_escaped}"
+            repeat with aTodo in to dos of targetProject
+                if status of aTodo is open then
+                    set todoItem to {{todoId:(id of aTodo), todoName:(name of aTodo)}}
+                    set end of todoList to todoItem
+                end if
+            end repeat
+
+            -- Convert to string format
+            set output to ""
+            repeat with todoItem in todoList
+                set output to output & "|" & todoId of todoItem & "~" & todoName of todoItem
+            end repeat
+            return output
+        end tell
+        """
+    else:
+        # All incomplete todos
+        applescript = """
+        tell application "Things3"
+            set todoList to {}
+            repeat with aTodo in to dos
+                if status of aTodo is open then
+                    -- Get project name if exists
+                    set projectName to ""
+                    try
+                        if project of aTodo is not missing value then
+                            set projectName to name of project of aTodo
+                        end if
+                    end try
+
+                    set todoItem to {todoId:(id of aTodo), todoName:(name of aTodo), todoProject:projectName}
+                    set end of todoList to todoItem
+                end if
+            end repeat
+
+            -- Convert to string format
+            set output to ""
+            repeat with todoItem in todoList
+                set output to output & "|" & todoId of todoItem & "~" & todoName of todoItem & "~" & todoProject of todoItem
+            end repeat
+            return output
+        end tell
+        """
+
+    try:
+        output = _run_applescript(applescript)
+        if not output or output.strip() == "":
+            return []
+
+        # Parse custom format: |id~name~project|id~name~project...
+        todos = []
+        for item in output.split("|"):
+            if not item.strip():
+                continue
+            parts = item.split("~")
+            if len(parts) >= 2:
+                todo = {"id": parts[0], "name": parts[1]}
+                if len(parts) >= 3 and parts[2]:
+                    todo["project"] = parts[2]
+                todos.append(todo)
+
+        return todos
+    except subprocess.CalledProcessError as e:
+        log(f"ERROR getting incomplete Things todos: {e.stderr}")
+        log(traceback.format_exc())
+        return []
+    except OSError as e:
+        log(f"ERROR getting incomplete Things todos (process error): {e}")
+        log(traceback.format_exc())
+        return []
+
+
 @retry_with_backoff(
     max_attempts=APPLESCRIPT_MAX_RETRIES,
     initial_delay=APPLESCRIPT_INITIAL_DELAY,
@@ -264,5 +357,57 @@ def complete_todo(things_id: str) -> bool:
         raise  # Re-raise for retry decorator
     except OSError as e:
         log(f"ERROR completing Things todo (process error): {e}")
+        log(traceback.format_exc())
+        return False
+
+
+@retry_with_backoff(
+    max_attempts=APPLESCRIPT_MAX_RETRIES,
+    initial_delay=APPLESCRIPT_INITIAL_DELAY,
+    default_return=False,
+)
+def update_todo_notes(things_id: str, additional_note: str) -> bool:
+    """
+    Append text to an existing todo's notes field.
+
+    Args:
+        things_id: Things 3 todo ID
+        additional_note: Text to append (with newline separator)
+
+    Returns:
+        True if successful, False otherwise
+    """
+
+    # Escape special characters for AppleScript
+    def escape_applescript(text: str) -> str:
+        """Escape special characters for AppleScript string."""
+        text = text.replace("\\", "\\\\")
+        text = text.replace('"', '\\"')
+        text = text.replace("\n", "\\n")
+        text = text.replace("\r", "\\r")
+        text = text.replace("\t", "\\t")
+        return text
+
+    note_escaped = escape_applescript(additional_note)
+    things_id_escaped = escape_applescript(things_id)
+
+    applescript = f"""
+    tell application "Things3"
+        set theTodo to to do id "{things_id_escaped}"
+        set currentNotes to notes of theTodo
+        set notes of theTodo to currentNotes & "{note_escaped}"
+        return true
+    end tell
+    """
+
+    try:
+        _run_applescript(applescript)
+        return True
+    except subprocess.CalledProcessError as e:
+        log(f"ERROR updating Things todo notes: {e.stderr}")
+        log(traceback.format_exc())
+        raise  # Re-raise for retry decorator
+    except OSError as e:
+        log(f"ERROR updating Things todo notes (process error): {e}")
         log(traceback.format_exc())
         return False

@@ -345,7 +345,7 @@ class TestSync:
         # Verify state was migrated
         migrated_state = json.loads(state_file.read_text())
         assert isinstance(migrated_state["note-123"]["synced_todos"], dict)
-        assert migrated_state["_version"] == 3
+        assert migrated_state["_version"] == 4  # Now at v4 with embedding cache
 
     def test_sync_creates_bear_callback_url(self, mocker, tmp_path):
         # Mock subprocess
@@ -611,3 +611,277 @@ class TestSync:
         ]
         # Should NOT have "project whose name" since no project matched
         assert "project whose name" not in str(create_calls[0])
+
+
+# Replacement text for the deduplication tests
+
+
+class TestDeduplication:
+    """Test embedding-based deduplication logic."""
+
+    def test_sync_with_duplicate_found(self, mocker, tmp_path):
+        """Test that duplicate todo is merged instead of created."""
+        # Mock subprocess for Things
+        mock_subprocess = mocker.patch("bear_things_sync.things.subprocess.run")
+        mock_result = MagicMock()
+        mock_result.stdout = "EXISTING123"
+        mock_subprocess.return_value = mock_result
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+
+        # Mock sqlite3 (Bear database)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.side_effect = [
+            [("note1", "Note Title", "- [ ] Review slides", 123)],
+            [],  # No tags
+            [(None,)],  # get_projects - areas
+            [(None,)],  # get_projects - inbox
+            [(None,)],  # get_projects - projects
+        ]
+        mocker.patch("bear_things_sync.bear.sqlite3.connect", return_value=mock_conn)
+        mocker.patch("bear_things_sync.bear.validate_bear_schema", return_value=(True, None))
+        mocker.patch("bear_things_sync.bear.BEAR_DATABASE_PATH", Path("/fake/path"))
+
+        # Mock get_incomplete_todos to return existing todo
+        mocker.patch(
+            "bear_things_sync.sync.get_incomplete_todos",
+            return_value=[{"id": "EXISTING123", "name": "Review presentation slides"}],
+        )
+
+        # Mock embedding functions to find a match
+        mocker.patch("bear_things_sync.sync.EMBEDDINGS_AVAILABLE", True)
+        mocker.patch(
+            "bear_things_sync.sync.find_most_similar",
+            return_value=("EXISTING123", 0.92),
+        )
+        mocker.patch(
+            "bear_things_sync.sync.generate_embedding",
+            return_value=[0.1, 0.2, 0.3],
+        )
+
+        # Mock state file
+        state_file = tmp_path / "state.json"
+        mocker.patch("bear_things_sync.utils.STATE_FILE", state_file)
+        log_file = tmp_path / "log.txt"
+        mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
+
+        from bear_things_sync.sync import sync
+
+        sync()
+
+        # Verify subprocess was called to update notes (not create todo)
+        applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
+        update_calls = [call for call in applescript_calls if "currentNotes" in call]
+        create_calls = [call for call in applescript_calls if "make new to do" in call]
+
+        assert len(update_calls) > 0  # Should have updated notes
+        assert len(create_calls) == 0  # Should NOT have created new todo
+
+    def test_sync_with_no_duplicate(self, mocker, tmp_path):
+        """Test that todo is created when no duplicate found."""
+        # Mock subprocess
+        mock_subprocess = mocker.patch("bear_things_sync.things.subprocess.run")
+        mock_result = MagicMock()
+        mock_result.stdout = "NEW123"
+        mock_subprocess.return_value = mock_result
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+
+        # Mock sqlite3 (Bear database)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.side_effect = [
+            [("note1", "Note Title", "- [ ] Unique task", 123)],
+            [],
+            [(None,)],
+            [(None,)],
+            [(None,)],
+        ]
+        mocker.patch("bear_things_sync.bear.sqlite3.connect", return_value=mock_conn)
+        mocker.patch("bear_things_sync.bear.validate_bear_schema", return_value=(True, None))
+        mocker.patch("bear_things_sync.bear.BEAR_DATABASE_PATH", Path("/fake/path"))
+
+        # Mock get_incomplete_todos
+        mocker.patch(
+            "bear_things_sync.sync.get_incomplete_todos",
+            return_value=[{"id": "OTHER123", "name": "Completely different"}],
+        )
+
+        # Mock embeddings to return no match
+        mocker.patch("bear_things_sync.sync.EMBEDDINGS_AVAILABLE", True)
+        mocker.patch("bear_things_sync.sync.find_most_similar", return_value=None)
+        mocker.patch("bear_things_sync.sync.generate_embedding", return_value=[0.5, 0.5, 0.0])
+
+        # Mock state file
+        state_file = tmp_path / "state.json"
+        mocker.patch("bear_things_sync.utils.STATE_FILE", state_file)
+        log_file = tmp_path / "log.txt"
+        mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
+
+        from bear_things_sync.sync import sync
+
+        sync()
+
+        # Verify subprocess was called to create todo
+        applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
+        create_calls = [call for call in applescript_calls if "make new to do" in call]
+        assert len(create_calls) > 0  # Should have created new todo
+
+    def test_sync_with_embeddings_disabled(self, mocker, tmp_path):
+        """Test fallback behavior when embeddings unavailable."""
+        # Mock subprocess
+        mock_subprocess = mocker.patch("bear_things_sync.things.subprocess.run")
+        mock_result = MagicMock()
+        mock_result.stdout = "NEW123"
+        mock_subprocess.return_value = mock_result
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+
+        # Mock sqlite3 (Bear database)
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.side_effect = [
+            [("note1", "Note Title", "- [ ] Some task", 123)],
+            [],
+            [(None,)],
+            [(None,)],
+            [(None,)],
+        ]
+        mocker.patch("bear_things_sync.bear.sqlite3.connect", return_value=mock_conn)
+        mocker.patch("bear_things_sync.bear.validate_bear_schema", return_value=(True, None))
+        mocker.patch("bear_things_sync.bear.BEAR_DATABASE_PATH", Path("/fake/path"))
+
+        # Mock embeddings as unavailable
+        mocker.patch("bear_things_sync.sync.EMBEDDINGS_AVAILABLE", False)
+
+        # Mock get_incomplete_todos (should NOT be called when embeddings disabled)
+        mock_get_incomplete = mocker.patch("bear_things_sync.sync.get_incomplete_todos")
+
+        # Mock state file
+        state_file = tmp_path / "state.json"
+        mocker.patch("bear_things_sync.utils.STATE_FILE", state_file)
+        log_file = tmp_path / "log.txt"
+        mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
+
+        from bear_things_sync.sync import sync
+
+        sync()
+
+        # Should create todo without checking for duplicates
+        applescript_calls = [str(call) for call in mock_subprocess.call_args_list]
+        create_calls = [call for call in applescript_calls if "make new to do" in call]
+        assert len(create_calls) > 0
+        assert not mock_get_incomplete.called
+
+    def test_sync_with_project_scoped_deduplication(self, mocker, tmp_path):
+        """Test that deduplication is scoped to matched project."""
+        # Mock subprocess
+        mock_subprocess = mocker.patch("bear_things_sync.things.subprocess.run")
+        mock_result = MagicMock()
+        mock_result.stdout = "NEW123"
+        mock_subprocess.return_value = mock_result
+        mocker.patch("bear_things_sync.things.is_things_available", return_value=True)
+
+        # Mock get_projects to return Work project
+        mocker.patch("bear_things_sync.sync.get_projects", return_value={"work": "Work"})
+
+        # Mock sqlite3 (Bear database) with tag that matches a project
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.side_effect = [
+            [("note1", "Note Title", "- [ ] Review slides", 123)],
+            [("Work",)],  # Tags for this note
+        ]
+        mocker.patch("bear_things_sync.bear.sqlite3.connect", return_value=mock_conn)
+        mocker.patch("bear_things_sync.bear.validate_bear_schema", return_value=(True, None))
+        mocker.patch("bear_things_sync.bear.BEAR_DATABASE_PATH", Path("/fake/path"))
+
+        # Mock get_incomplete_todos
+        mock_get_incomplete = mocker.patch(
+            "bear_things_sync.sync.get_incomplete_todos",
+            return_value=[{"id": "WORK123", "name": "Review presentation"}],
+        )
+
+        # Mock embeddings
+        mocker.patch("bear_things_sync.sync.EMBEDDINGS_AVAILABLE", True)
+        mocker.patch("bear_things_sync.sync.find_most_similar", return_value=None)
+        mocker.patch("bear_things_sync.sync.generate_embedding", return_value=[0.1, 0.2, 0.3])
+
+        # Mock state file
+        state_file = tmp_path / "state.json"
+        mocker.patch("bear_things_sync.utils.STATE_FILE", state_file)
+        log_file = tmp_path / "log.txt"
+        mocker.patch("bear_things_sync.utils.LOG_FILE", log_file)
+
+        from bear_things_sync.sync import sync
+
+        sync()
+
+        # Verify get_incomplete_todos was called with project="Work"
+        mock_get_incomplete.assert_called_with(project="Work")
+
+    def test_cache_cleanup_removes_old_entries(self, mocker):
+        """Test that old cache entries are removed."""
+        from datetime import datetime, timedelta
+
+        from bear_things_sync.sync import _cleanup_embedding_cache
+
+        # Create state with old and new cache entries
+        old_date = (datetime.now() - timedelta(days=10)).isoformat()
+        recent_date = datetime.now().isoformat()
+
+        state = {
+            "_embedding_cache": {
+                "old_todo": {
+                    "text": "Old todo",
+                    "embedding": [0.1, 0.2],
+                    "last_seen": old_date,
+                },
+                "recent_todo": {
+                    "text": "Recent todo",
+                    "embedding": [0.3, 0.4],
+                    "last_seen": recent_date,
+                },
+                "no_timestamp": {
+                    "text": "No timestamp",
+                    "embedding": [0.5, 0.6],
+                },
+            }
+        }
+
+        removed_count = _cleanup_embedding_cache(state)
+
+        # Should remove old_todo and no_timestamp
+        assert removed_count == 2
+        assert "old_todo" not in state["_embedding_cache"]
+        assert "no_timestamp" not in state["_embedding_cache"]
+        assert "recent_todo" in state["_embedding_cache"]
+
+    def test_state_v4_migration(self, mocker):
+        """Test migration from v3 to v4 adds embedding cache."""
+        from bear_things_sync.sync import _migrate_to_v4
+
+        state = {
+            "note1": {
+                "title": "Note",
+                "synced_todos": {
+                    "todo1": {
+                        "things_id": "ABC123",
+                        "completed": False,
+                        "text": "Test todo",
+                    }
+                },
+            }
+        }
+
+        _migrate_to_v4(state)
+
+        # Should add embedding cache
+        assert "_embedding_cache" in state
+        assert state["_embedding_cache"] == {}
+
+        # Should add merged_with field to existing todos
+        assert "merged_with" in state["note1"]["synced_todos"]["todo1"]
+        assert state["note1"]["synced_todos"]["todo1"]["merged_with"] is None

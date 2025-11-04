@@ -155,6 +155,15 @@ SQLITE_LOCK_INITIAL_DELAY = _user_config.get(
 # Command timeouts
 COMMAND_TIMEOUT = _user_config.get("command_timeout", 5)  # General command timeout in seconds
 
+# Embedding configuration for deduplication
+SIMILARITY_THRESHOLD = _user_config.get("similarity_threshold", 0.85)  # Moderate threshold
+EMBEDDING_MODEL = _user_config.get(
+    "embedding_model", "sentence-transformers/all-MiniLM-L6-v2"
+)  # Model for embeddings
+EMBEDDING_CACHE_MAX_AGE_DAYS = _user_config.get(
+    "embedding_cache_max_age_days", 7
+)  # Expire old embeddings
+
 # Ensure data directory exists
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
