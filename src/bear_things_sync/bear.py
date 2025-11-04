@@ -340,8 +340,8 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
             # Use Bear's x-callback-url scheme to replace note content
             url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
 
-            # Open the URL to trigger Bear
-            subprocess.run(["open", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+            # Open the URL to trigger Bear (use -g to not activate/focus Bear)
+            subprocess.run(["open", "-g", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
 
             # Give Bear a moment to process
             time.sleep(0.5)
@@ -437,8 +437,8 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
             # Use Bear's x-callback-url scheme to replace note content
             url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
 
-            # Open the URL to trigger Bear
-            subprocess.run(["open", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+            # Open the URL to trigger Bear (use -g to not activate/focus Bear)
+            subprocess.run(["open", "-g", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
 
             # Give Bear a moment to process
             time.sleep(0.5)
