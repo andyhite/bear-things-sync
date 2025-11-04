@@ -5,234 +5,183 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-Automatically syncs uncompleted todos from Bear notes to Things 3 when Bear syncs.
+Keep your todos in sync between Bear and Things 3. When you add a todo in Bear, it shows up in Things 3. When you complete it in Things 3, it gets checked off in Bear.
 
 [Features](#how-it-works) • [Installation](#installation) • [Development](#development) • [Contributing](CONTRIBUTING.md) • [License](LICENSE)
 
 ## How It Works
 
-1. **File Watcher**: Monitors Bear's database for changes using `fswatch`
-2. **Todo Extraction**: Parses Bear notes for uncompleted checkboxes (`- [ ]` or `* [ ]`)
-3. **Tag Sync**: Extracts tags from Bear notes, converts PascalCase to Title Case, and adds them to Things 3 todos
-4. **Smart Project Assignment**: Automatically assigns todos to matching Things 3 projects based on Bear tags (ignores emojis)
-5. **Things Integration**: Creates tasks in Things 3 via AppleScript
-6. **Duplicate Prevention**: Tracks synced todos to avoid creating duplicates
+The sync runs as a background daemon that watches both Bear and Things 3 databases for changes.
+
+When you add a todo in Bear (using `- [ ]` or `* [ ]`), it gets created in Things 3 with all your tags. If a Bear tag matches one of your Things 3 projects, the todo goes straight into that project. The sync is smart about tag formatting too - `#TrainingTools` becomes "Training Tools" in Things 3.
+
+When you complete a todo in Things 3, it gets marked as done in your Bear note automatically. There's a 5-second cooldown to prevent the apps from ping-ponging updates back and forth.
 
 ## Requirements
 
 - macOS with Bear and Things 3 installed
 - Python 3.9+ (built-in on macOS)
-- Homebrew (for installing fswatch)
-- `fswatch` - File system monitoring tool
 
 ## Installation
 
-### Quick Install (Recommended)
+### Quick Install
 
 ```bash
-# 1. Install fswatch (required for file watching)
-brew install fswatch
-
-# 2. Install bear-things-sync
 pip install bear-things-sync
-# or with uv:
-uv pip install bear-things-sync
+bear-things-sync install
+```
 
-# 3. Test it works
+That's it! The installer will check that you have Bear and Things 3, then set up a background daemon to keep everything in sync.
+
+### Manual Installation
+
+If you want more control over the process:
+
+```bash
+# Install the package
+pip install bear-things-sync
+
+# Try a manual sync first to make sure everything works
 bear-things-sync
 
-# 4. Install as a background daemon
-bear-things-sync-install
+# Check the logs if you're curious
+cat ~/.bear-things-sync/sync_log.txt
+
+# Install the background daemon
+bear-things-sync install
+
+# Verify it's running
+launchctl list | grep bear-things-sync
 ```
 
-That's it! The daemon will now run automatically in the background.
-
-### Detailed Steps
-
-#### 1. Install dependencies
+For development, clone the repo and install in editable mode:
 
 ```bash
-# Install fswatch for file monitoring
-brew install fswatch
-```
-
-#### 2. Install the package
-
-```bash
-# Install from PyPI (when published)
-pip install bear-things-sync
-
-# Or with uv (faster)
-uv pip install bear-things-sync
-
-# Or for development, clone and install:
 git clone https://github.com/andyhite/bear-things-sync.git
 cd bear-things-sync
 uv venv
 uv pip install -e .
 ```
 
-#### 3. Test manually first
-
-Run the sync script once to ensure everything works:
-
-```bash
-bear-things-sync
-```
-
-Check the logs:
-```bash
-cat ~/.bear-things-sync/sync_log.txt
-```
-
-#### 4. Install as a background daemon
-
-Run the installer which will:
-- Copy the watcher script to `~/.bear-things-sync/`
-- Generate the launchd plist
-- Install and start the daemon
-
-```bash
-bear-things-sync-install
-```
-
-Check if it's running:
-
-```bash
-launchctl list | grep bear-things-sync
-```
-
 ## Configuration
 
-The default configuration works for most users. If you need to customize:
+The defaults work for most people, but if you want to customize things, create `~/.bear-things-sync/config.json`:
 
-- **Filter by tag**: Only sync notes with a specific tag
-- **Custom todo patterns**: Recognize different checkbox formats
-- **Change sync tag**: Modify the "Bear Sync" tag added to todos
+```json
+{
+  "sync_tag": "Bear Sync",
+  "bidirectional_sync": true,
+  "sync_cooldown": 5,
+  "bear_database_path": "/path/to/custom/database.sqlite",
+  "things_database_path": "/path/to/custom/Things/main.sqlite"
+}
+```
 
-For development/clone installations, edit `src/bear_things_sync/config.py`.
+Some useful options:
+- `sync_tag` - Change the tag added to synced todos (default: "Bear Sync")
+- `sync_cooldown` - Adjust the cooldown period in seconds (default: 5)
+- `bidirectional_sync` - Turn off Things → Bear sync if you only want one-way (default: true)
 
-For pip installations, configuration isn't currently supported (coming soon: config file support).
+Check `src/bear_things_sync/config.py` for the full list of options.
 
 ## Usage
 
-Once installed, the sync happens automatically when:
-- Bear syncs with iCloud (typically within seconds of changes)
-- You make local changes in Bear
+Once the daemon is running, everything happens automatically in the background.
 
-Synced todos will:
-- Appear in Things 3 (Inbox or matching project)
-- Have tag `Bear Sync` plus any tags from the Bear note (converted to Title Case)
-- Include a link back to the original Bear note
-- Be automatically assigned to a project if a Bear tag matches a Things project name (case-insensitive, emoji-agnostic)
+Add a todo in Bear using `- [ ] Task name` and it'll show up in Things 3 with your tags. If you have a tag like `#Fitness` and a Things project called "🏃 Fitness", the todo goes straight into that project. The sync ignores emojis and handles both PascalCase and regular tags.
+
+Complete a todo in Things 3, and it gets checked off in your Bear note. There's a 5-second cooldown between updates to prevent the two apps from fighting over the same todo.
 
 ### Tag Formatting
 
-Bear tags in PascalCase are automatically converted to Title Case for better readability in Things 3:
+Tags get converted from PascalCase to Title Case for Things 3. So `#TrainingTools` becomes "Training Tools" and `#MyProject` becomes "My Project".
 
-**Examples:**
-- `#TrainingTools` → `Training Tools`
-- `#MyProject` → `My Project`
-- `#Circuit` → `Circuit` (unchanged)
+### Project Assignment
 
-### Smart Project Assignment
+If a Bear tag matches a Things 3 project name, the todo goes into that project automatically. The matching is case-insensitive and ignores emojis, so `#Fitness` will match a project called "🏃 Fitness" or "fitness" or "FITNESS".
 
-If a Bear note has a tag that matches a Things 3 project name, todos will be automatically added to that project:
-
-**Examples:**
-- Bear tag: `#Circuit` → Things project: `🔋 Circuit` ✓
-- Bear tag: `#TrainingTools` → Things project: `🏋️ Training Tools` ✓
-
-The matching:
-- Is **case-insensitive** (`circuit` = `Circuit`)
-- **Ignores emojis** (`Circuit` matches `🔋 Circuit`)
-- **Handles PascalCase** (`TrainingTools` matches `Training Tools`)
-- Uses the **first matching tag** if multiple tags match projects
-- **Excludes the matched tag** from the todo's tags to avoid redundancy (no need for a "Circuit" tag when it's already in the Circuit project!)
-- **Keeps unmatched tags** so you can still organize by tags that don't have corresponding projects
+When a tag matches a project, it won't be added as a tag on the todo (since it's already in that project). Other tags that don't match projects will still be added.
 
 ## Monitoring
 
-### View logs
-
-```bash
-# Sync script logs
-tail -f ~/.bear-things-sync/sync_log.txt
-
-# Watcher logs
-tail -f ~/.bear-things-sync/watcher_log.txt
-
-# Daemon logs
-tail -f ~/.bear-things-sync/daemon_stdout.log
-tail -f ~/.bear-things-sync/daemon_stderr.log
-```
-
-### Check daemon status
+Check if the daemon is running:
 
 ```bash
 launchctl list | grep bear-things-sync
+```
+
+View the logs:
+
+```bash
+tail -f ~/.bear-things-sync/sync_log.txt
+tail -f ~/.bear-things-sync/watcher_log.txt
+tail -f ~/.bear-things-sync/daemon_stderr.log
 ```
 
 ## Uninstallation
 
-Uninstall the daemon and optionally remove data:
+Stop the daemon and remove the background service:
 
 ```bash
-# Uninstall the daemon (keeps data by default)
-bear-things-sync-uninstall
-
-# Completely remove the package
-pip uninstall bear-things-sync
-# or with uv:
-uv pip uninstall bear-things-sync
+bear-things-sync uninstall
 ```
 
-The uninstaller will:
-1. Stop the running daemon
-2. Remove the launchd plist
-3. Ask if you want to remove the data directory (`~/.bear-things-sync/`)
+This stops the daemon and removes the launchd plist. It'll ask if you want to delete your sync state and logs too.
+
+To completely remove the package:
+
+```bash
+pip uninstall bear-things-sync
+```
 
 ## Troubleshooting
 
 ### Daemon won't start
 
-1. Check the error log: `cat ~/.bear-things-sync/daemon_stderr.log`
-2. Verify fswatch is installed: `which fswatch`
-3. Test scripts manually first
+Check the error log to see what's wrong:
 
-### Todos not syncing
-
-1. Check logs for errors
-2. Verify Bear database location exists
-3. Ensure Things 3 is installed and has AppleScript access
-4. Check that todos match the pattern: `- [ ] Task text`
-
-### Too many duplicates
-
-The script maintains state in `~/.bear-things-sync/sync_state.json`. If you want to resync everything:
-
-```bash
-rm ~/.bear-things-sync/sync_state.json
-```
-
-### Script crashes
-
-View the full error:
 ```bash
 cat ~/.bear-things-sync/daemon_stderr.log
 ```
 
-Restart the daemon:
+Try running a manual sync to test things out:
+
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.andyhite.bear-things-sync.plist
-launchctl load ~/Library/LaunchAgents/com.andyhite.bear-things-sync.plist
+bear-things-sync
+```
+
+### Todos not syncing
+
+Make sure your todos are formatted as `- [ ] Task text` or `* [ ] Task text`. Check the logs for errors. If Things 3 doesn't have the right permissions, you might need to grant AppleScript access.
+
+### Getting duplicates
+
+If you're seeing duplicate todos, reset the sync state:
+
+```bash
+bear-things-sync reset
+```
+
+This clears all tracking and lets you start fresh.
+
+### Daemon crashed
+
+Check what happened:
+```bash
+cat ~/.bear-things-sync/daemon_stderr.log
+```
+
+Restart it:
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bear-things-sync.plist
+launchctl load ~/Library/LaunchAgents/com.bear-things-sync.plist
 ```
 
 ## Development
 
 ### Running Tests
 
-The project includes comprehensive unit tests with mocked I/O operations. All tests use mocks to avoid touching real Bear database or Things 3.
+All tests use mocks so they don't touch your real Bear or Things 3 databases.
 
 ```bash
 # Install test dependencies
@@ -253,37 +202,13 @@ uv run pytest tests/test_sync.py::TestSync::test_sync_new_todo -v
 
 ### Code Quality
 
-The project uses `ruff` for formatting and linting, and `pyright` for type checking:
+Uses `ruff` for formatting/linting and `pyright` for type checking:
 
 ```bash
-# Install quality tools
-uv pip install ruff pyright
-
-# Format code
 uv run ruff format src/ tests/
-
-# Check formatting (for CI)
-uv run ruff format --check src/ tests/
-
-# Lint code
-uv run ruff check src/ tests/
-
-# Auto-fix linting issues
 uv run ruff check --fix src/ tests/
-
-# Type check
 uv run pyright src/
 ```
-
-### Test Coverage
-
-Tests cover:
-- **utils.py**: Pure functions (PascalCase conversion, emoji stripping, logging)
-- **bear.py**: Database queries and todo extraction (mocked SQLite)
-- **things.py**: AppleScript operations (mocked subprocess)
-- **sync.py**: Main orchestration logic (all dependencies mocked)
-
-All external I/O operations (database, AppleScript, file system) are mocked to ensure fast, isolated tests.
 
 ### Project Structure
 
@@ -292,19 +217,23 @@ bear-things-sync/
 ├── src/bear_things_sync/       # Main Python package
 │   ├── bear.py                 # Bear database operations
 │   ├── things.py               # Things 3 AppleScript operations
+│   ├── things_db.py            # Things 3 database reading (for bi-directional sync)
 │   ├── sync.py                 # Main sync logic
+│   ├── watch.py                # File watcher using watchdog
+│   ├── cli.py                  # Command-line interface
+│   ├── install.py              # Daemon installation
+│   ├── uninstall.py            # Daemon uninstallation
+│   ├── reset.py                # State reset utility
 │   ├── config.py               # Configuration
 │   └── utils.py                # Utility functions
 ├── tests/                      # Unit tests
 │   ├── test_bear.py            # Bear module tests
 │   ├── test_things.py          # Things module tests
+│   ├── test_things_db.py       # Things database tests
 │   ├── test_sync.py            # Sync orchestration tests
 │   └── test_utils.py           # Utility function tests
-├── scripts/                    # Helper scripts
-│   ├── install.sh              # Automated installation script
-│   └── watch_bear.sh           # File watcher wrapper
-├── launchd/
-│   └── com.andyhite.bear-things-sync.plist.template  # launchd template
+├── templates/
+│   └── daemon.plist.template   # launchd configuration template
 ├── .github/workflows/
 │   └── ci.yml                  # GitHub Actions CI/CD
 ├── pyproject.toml              # Package configuration
@@ -324,61 +253,40 @@ Runtime data (logs and state) is stored in `~/.bear-things-sync/`:
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Quick Start for Contributors
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details. Quick setup:
 
 ```bash
-# Fork and clone the repository
 git clone https://github.com/YOUR_USERNAME/bear-things-sync.git
 cd bear-things-sync
-
-# Set up development environment
 uv venv
 uv pip install -e .
 uv pip install pytest pytest-mock ruff pyright
 
-# Run quality checks
-uv run ruff format src/ tests/        # Format code
-uv run ruff check src/ tests/         # Lint code
-uv run pyright src/                   # Type check
-uv run pytest tests/ -v               # Run tests
+# Run the checks
+uv run ruff format src/ tests/
+uv run ruff check src/ tests/
+uv run pyright src/
+uv run pytest tests/ -v
 ```
 
-All pull requests must pass the CI checks (formatting, linting, type checking, and tests).
+PRs need to pass all CI checks (format, lint, typecheck, tests).
 
-### Commit Message Format
+### Commit Messages
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning and changelog generation.
+Use [Conventional Commits](https://www.conventionalcommits.org/) for automated versioning:
 
-**Format**: `<type>: <description>`
-
-**Examples**:
 ```
-feat: add uninstall command for daemon
-fix: handle missing Bear database gracefully
+feat: add uninstall command
+fix: handle missing Bear database
 docs: update installation instructions
-chore: bump dependencies
 ```
 
-**Types**:
-- `feat:` - New feature (triggers minor version bump)
-- `fix:` - Bug fix (triggers patch version bump)
-- `docs:` - Documentation changes
-- `chore:` - Maintenance tasks
-- `test:` - Test changes
-- `refactor:` - Code refactoring
-
-**Breaking changes**: Add `BREAKING CHANGE:` in the commit footer to trigger a major version bump.
+Use `feat:` for new features and `fix:` for bug fixes. Add `BREAKING CHANGE:` in the footer for breaking changes.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Notes
 
-- The script reads Bear's database in read-only mode (safe)
-- Completed todos in Bear won't be synced initially (only incomplete ones)
-- Marking a todo as complete in Bear will complete it in Things 3
-- Completing a todo in Things 3 won't mark it complete in Bear
-- The sync is primarily one-way: Bear → Things 3
+The databases are opened in read-only mode, so there's no risk of corrupting your Bear or Things 3 data. Only incomplete todos get synced from Bear to Things 3. When you complete a todo in either app, it gets marked as complete in the other (with a 5-second cooldown to prevent the apps from bouncing updates back and forth).

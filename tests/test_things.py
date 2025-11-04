@@ -21,13 +21,13 @@ class TestGetProjects:
 
         # Mock subprocess to return project names
         mock_result = MagicMock()
-        mock_result.stdout = "🔋 Circuit, 🏋️ Training Tools, Personal"
+        mock_result.stdout = "🏃 Fitness, 🏋️ Training Tools, Personal"
         mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
 
         projects = get_projects()
 
         assert len(projects) == 3
-        assert projects["circuit"] == "🔋 Circuit"
+        assert projects["fitness"] == "🏃 Fitness"
         assert projects["training tools"] == "🏋️ Training Tools"
         assert projects["personal"] == "Personal"
 
@@ -122,11 +122,11 @@ class TestCreateTodo:
         mock_result.stdout = "things-id-789"
         mock_run = mocker.patch("bear_things_sync.things.subprocess.run", return_value=mock_result)
 
-        todo_id = create_todo("Test Todo", tags=["Bear Sync", "Circuit"])
+        todo_id = create_todo("Test Todo", tags=["Bear Sync", "Fitness"])
 
         assert todo_id == "things-id-789"
         applescript = mock_run.call_args[0][0][2]
-        assert 'tag names:"Bear Sync, Circuit"' in applescript
+        assert 'tag names:"Bear Sync, Fitness"' in applescript
 
     def test_todo_with_project(self, mocker):
         mock_result = MagicMock()

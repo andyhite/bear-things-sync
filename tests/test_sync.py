@@ -27,8 +27,8 @@ class TestSync:
         # get_notes_with_todos, tags query, get_projects (3 queries)
         mock_cursor.fetchall.side_effect = [
             [("note-123", "Test Note", "- [ ] Test todo", 123)],  # Notes
-            [("Circuit",)],  # Tags for note-123
-            [("🔋 Circuit",)],  # Projects query - areas
+            [("Fitness",)],  # Tags for note-123
+            [("🏃 Fitness",)],  # Projects query - areas
             [(None,)],  # Projects query - inbox
             [(None,)],  # Projects query - projects
         ]
@@ -191,7 +191,7 @@ class TestSync:
             cmd = args[0]
             # get_projects AppleScript returns comma-separated project names
             if "repeat with aProject in projects" in str(cmd):
-                result.stdout = "🔋 Circuit"
+                result.stdout = "🏃 Fitness"
             # create_todo returns Things ID
             elif "make new to do" in str(cmd):
                 result.stdout = "things-id-123"
@@ -208,7 +208,7 @@ class TestSync:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.side_effect = [
             [("note-123", "Test Note", "- [ ] Test todo", 123)],
-            [("Circuit",), ("ExtraTag",)],
+            [("Fitness",), ("ExtraTag",)],
         ]
         mocker.patch("bear_things_sync.bear.sqlite3.connect", return_value=mock_conn)
         mocker.patch("bear_things_sync.bear.validate_bear_schema", return_value=(True, None))
@@ -227,7 +227,7 @@ class TestSync:
             call for call in mock_subprocess.call_args_list if "make new to do" in str(call)
         ]
         assert len(create_calls) == 1
-        assert 'project whose name is "🔋 Circuit"' in str(create_calls[0])
+        assert 'project whose name is "🏃 Fitness"' in str(create_calls[0])
 
     def test_sync_pascal_case_tag_conversion(self, mocker, tmp_path):
         # Mock subprocess
@@ -588,7 +588,7 @@ class TestSync:
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.side_effect = [
             [("note-123", "Test Note", "- [ ] Test todo", 123)],
-            [("Circuit",)],
+            [("Fitness",)],
             [(None,)],  # No projects in any query
             [(None,)],
             [(None,)],

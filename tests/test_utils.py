@@ -17,7 +17,7 @@ class TestPascalToTitleCase:
         assert pascal_to_title_case("MyProject") == "My Project"
 
     def test_single_word(self):
-        assert pascal_to_title_case("Circuit") == "Circuit"
+        assert pascal_to_title_case("Fitness") == "Fitness"
         assert pascal_to_title_case("Todo") == "Todo"
 
     def test_multiple_capitals(self):
@@ -39,23 +39,23 @@ class TestStripEmojis:
     """Test emoji stripping."""
 
     def test_emoji_at_start(self):
-        assert strip_emojis("🔋 Circuit") == "Circuit"
+        assert strip_emojis("🏃 Fitness") == "Fitness"
         assert strip_emojis("🏋️ Training Tools") == "Training Tools"
 
     def test_emoji_at_end(self):
-        assert strip_emojis("Circuit 🔋") == "Circuit"
+        assert strip_emojis("Fitness 🏃") == "Fitness"
 
     def test_emoji_in_middle(self):
         # Emoji removal collapses multiple spaces
         assert strip_emojis("My 🔥 Project") == "My Project"
 
     def test_multiple_emojis(self):
-        assert strip_emojis("🔋 Circuit 🏋️") == "Circuit"
+        assert strip_emojis("🏃 Fitness 🏋️") == "Fitness"
         assert strip_emojis("🔥🔥🔥 Hot Project") == "Hot Project"
 
     def test_no_emojis(self):
         assert strip_emojis("Plain Text") == "Plain Text"
-        assert strip_emojis("Circuit") == "Circuit"
+        assert strip_emojis("Fitness") == "Fitness"
 
     def test_empty_string(self):
         assert strip_emojis("") == ""

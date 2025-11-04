@@ -209,7 +209,7 @@ def pascal_to_title_case(text: str) -> str:
 
     Examples:
         "TrainingTools" -> "Training Tools"
-        "Circuit" -> "Circuit"
+        "Fitness" -> "Fitness"
         "MyProjectName" -> "My Project Name"
     """
     # Insert space before capital letters (except at the start)
