@@ -345,7 +345,7 @@ class TestSync:
         # Verify state was migrated
         migrated_state = json.loads(state_file.read_text())
         assert isinstance(migrated_state["note-123"]["synced_todos"], dict)
-        assert migrated_state["_version"] == 4  # Now at v4 with embedding cache
+        assert migrated_state["_version"] == 5  # Now at v5 with bi-directional sync tracking
 
     def test_sync_creates_bear_callback_url(self, mocker, tmp_path):
         # Mock subprocess
