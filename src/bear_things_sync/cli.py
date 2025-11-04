@@ -55,6 +55,12 @@ def main() -> None:
         help="Which app triggered the sync (bear or things)",
     )
 
+    # Watch command
+    subparsers.add_parser(
+        "watch",
+        help="Continuously watch databases and sync changes automatically",
+    )
+
     # Install command
     subparsers.add_parser(
         "install",
@@ -118,6 +124,20 @@ def main() -> None:
         from .uninstall import uninstall
 
         uninstall()
+
+    elif args.command == "watch":
+        from .watch import watch
+
+        try:
+            watch()
+        except Exception as e:
+            from .utils import log
+
+            log(f"FATAL ERROR: {e}")
+            import traceback
+
+            log(traceback.format_exc())
+            sys.exit(1)
 
     elif args.command == "reset":
         from .reset import reset

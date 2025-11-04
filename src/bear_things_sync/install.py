@@ -198,10 +198,7 @@ def find_template_file(filename: str) -> Optional[Path]:
 
         # Fallback for development: check project structure
         package_root = get_package_root()
-        if filename == "watch_sync.sh":
-            dev_path = package_root.parent.parent / "scripts" / filename
-        else:  # daemon.plist.template
-            dev_path = package_root.parent.parent / "templates" / filename
+        dev_path = package_root.parent.parent / "templates" / filename
 
         if dev_path.exists():
             return dev_path
@@ -214,10 +211,7 @@ def find_template_file(filename: str) -> Optional[Path]:
             return installed_path
 
         # Check development location (project root)
-        if filename == "watch_sync.sh":
-            dev_path = package_root.parent.parent / "scripts" / filename
-        else:  # daemon.plist.template
-            dev_path = package_root.parent.parent / "templates" / filename
+        dev_path = package_root.parent.parent / "templates" / filename
 
         if dev_path.exists():
             return dev_path
@@ -226,7 +220,7 @@ def find_template_file(filename: str) -> Optional[Path]:
     return None
 
 
-def copy_installation_files(install_dir: Path) -> tuple[Path, Path]:
+def copy_installation_files(install_dir: Path) -> Path:
     """
     Copy template files to installation directory.
 
@@ -234,36 +228,26 @@ def copy_installation_files(install_dir: Path) -> tuple[Path, Path]:
         install_dir: Directory to install files to
 
     Returns:
-        Tuple of (watcher_script_path, plist_path)
+        Path to plist template
     """
     # Create install directory
     install_dir.mkdir(parents=True, exist_ok=True)
     print(f"Install directory: {install_dir}")
     print()
 
-    # Find template files
-    watcher_template = find_template_file("watch_sync.sh")
+    # Find plist template
     plist_template = find_template_file("daemon.plist.template")
 
-    # Check if templates exist
-    if not watcher_template:
-        print("ERROR: Watcher template not found")
-        print("Searched in package and project scripts/ directory")
-        sys.exit(1)
+    # Check if template exists
     if not plist_template:
         print("ERROR: Plist template not found")
         print("Searched in package and project templates/ directory")
         sys.exit(1)
 
-    # Copy and configure watcher script
-    print("Installing watcher script...")
-    watcher_output = install_dir / "watch_sync.sh"
-    shutil.copy(watcher_template, watcher_output)
-    watcher_output.chmod(0o755)  # Make executable
-    print(f"✓ Installed: {watcher_output}")
+    print("✓ Found plist template")
     print()
 
-    return watcher_output, plist_template
+    return plist_template
 
 
 def generate_plist_config(install_dir: Path, plist_template: Path) -> Path:
@@ -423,7 +407,7 @@ def install() -> None:
     install_dir = get_install_directory()
 
     # Copy installation files
-    _watcher_output, plist_template = copy_installation_files(install_dir)
+    plist_template = copy_installation_files(install_dir)
 
     # Generate plist configuration
     plist_output = generate_plist_config(install_dir, plist_template)

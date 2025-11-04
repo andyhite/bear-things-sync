@@ -6,10 +6,11 @@
     <key>Label</key>
     <string>${DAEMON_LABEL}</string>
 
-    <!-- Path to the watcher script -->
+    <!-- Command to run the watcher -->
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_DIR}/watch_sync.sh</string>
+        <string>bear-things-sync</string>
+        <string>watch</string>
     </array>
 
     <!-- Working directory -->

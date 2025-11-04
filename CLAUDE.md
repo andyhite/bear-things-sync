@@ -88,6 +88,9 @@ git commit --no-verify
 # Or with activated venv
 python -m bear_things_sync
 
+# Watch mode (continuous monitoring)
+uv run bear-things-sync watch
+
 # View logs
 tail -f ~/.bear-things-sync/sync_log.txt
 ```
@@ -97,15 +100,15 @@ tail -f ~/.bear-things-sync/sync_log.txt
 ### Core Data Flow
 
 **Bear → Things 3 Sync:**
-1. **File Watcher** (`watch_sync.sh`) → Monitors Bear database with `fswatch`
-2. **Sync Trigger** → Calls `bear-things-sync --source bear` on database changes
+1. **File Watcher** (`watch.py`) → Monitors Bear database using Python's `watchdog` library
+2. **Sync Trigger** → Calls `sync(source='bear')` on database changes
 3. **Bear Module** (`bear.py`) → Reads Bear's SQLite database (read-only)
 4. **Sync Logic** (`sync.py`) → Orchestrates the sync process
 5. **Things Module** (`things.py`) → Creates/completes todos via AppleScript
 
 **Things 3 → Bear Sync:**
-1. **File Watcher** (`watch_sync.sh`) → Monitors Things 3 database with `fswatch`
-2. **Sync Trigger** → Calls `bear-things-sync --source things` on database changes
+1. **File Watcher** (`watch.py`) → Monitors Things 3 database using Python's `watchdog` library
+2. **Sync Trigger** → Calls `sync(source='things')` on database changes
 3. **Things DB Module** (`things_db.py`) → Queries Things 3's SQLite database for completed todos
 4. **Sync Logic** (`sync.py`) → Checks cooldown, finds completed todos
 5. **Bear AppleScript** (`bear.py`) → Marks todos complete in Bear notes via AppleScript
@@ -139,6 +142,13 @@ tail -f ~/.bear-things-sync/sync_log.txt
 - **Bear → Things**: Syncs new incomplete todos, marks completed todos
 - **Things → Bear**: Marks completed todos in Bear via AppleScript
 - Cleans up state for deleted notes
+
+**watch.py** - File monitoring (Python watchdog)
+- Monitors both Bear and Things 3 database directories
+- Triggers `sync(source='bear')` or `sync(source='things')` on file changes
+- Implements throttling (10-second minimum interval between syncs)
+- Runs via `bear-things-sync watch` command
+- Used by LaunchAgent daemon for automatic background syncing
 
 **config.py** - Configuration
 - Paths: Bear database, Things 3 database, state file, log file
