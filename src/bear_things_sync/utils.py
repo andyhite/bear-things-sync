@@ -352,9 +352,9 @@ def send_notification(title: str, message: str, sound: bool = False) -> bool:
     try:
         # Build AppleScript for notification
         sound_param = ' sound name "default"' if sound else ""
-        applescript = f'''
+        applescript = f"""
         display notification "{message}" with title "{title}"{sound_param}
-        '''
+        """
 
         subprocess.run(
             ["osascript", "-e", applescript],

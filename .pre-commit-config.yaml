@@ -1,0 +1,27 @@
+# Pre-commit hooks for code quality checks
+# See https://pre-commit.com for more information
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version should match the one in pyproject.toml
+    rev: v0.8.4
+    hooks:
+      # Run the formatter first to auto-fix formatting
+      - id: ruff-format
+        name: Format code with ruff
+        types_or: [python, pyi]
+
+      # Then run the linter to catch code quality issues
+      - id: ruff
+        name: Lint code with ruff
+        types_or: [python, pyi]
+        args: [--fix]
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.390
+    hooks:
+      - id: pyright
+        name: Type check with pyright
+        types_or: [python, pyi]
+        # Use system pyright to leverage uv environment
+        additional_dependencies: []

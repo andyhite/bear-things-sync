@@ -14,6 +14,7 @@ def main() -> None:
     - sync: Run a one-time sync of todos from Bear to Things 3 (default)
     - install: Install the background daemon for automatic syncing
     - uninstall: Uninstall the background daemon
+    - reset: Reset the sync state (clears all tracking of previously synced todos)
 
     If no subcommand is provided, defaults to 'sync' for convenience.
     """
@@ -60,6 +61,12 @@ def main() -> None:
         help="Uninstall the background daemon",
     )
 
+    # Reset command
+    subparsers.add_parser(
+        "reset",
+        help="Reset the sync state (clears all tracking of previously synced todos)",
+    )
+
     args = parser.parse_args()
 
     # Handle utility flags
@@ -103,6 +110,11 @@ def main() -> None:
         from .uninstall import uninstall
 
         uninstall()
+
+    elif args.command == "reset":
+        from .reset import reset
+
+        reset()
 
 
 if __name__ == "__main__":

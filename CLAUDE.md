@@ -25,7 +25,7 @@ uv run pytest tests/ --cov=bear_things_sync --cov-report=term-missing
 
 ### Code Quality
 ```bash
-# Format code (required before commits)
+# Format code
 uv run ruff format src/ tests/
 
 # Check formatting (used in CI)
@@ -40,6 +40,41 @@ uv run ruff check --fix src/ tests/
 # Type check
 uv run pyright src/
 ```
+
+### Pre-commit Hooks
+Pre-commit hooks automatically run quality checks before each commit. This ensures code is always formatted and passes linting/type checking.
+
+**First-time setup:**
+```bash
+# Install dependencies (including pre-commit)
+uv sync
+
+# Install the git hooks
+pre-commit install
+```
+
+**Usage:**
+Once installed, hooks run automatically on `git commit`:
+- **Ruff format**: Auto-formats code and stages changes
+- **Ruff check**: Lints code with auto-fix where possible
+- **Pyright**: Type checks the codebase
+
+**Manual hook execution:**
+```bash
+# Run hooks on all files (useful after updating .pre-commit-config.yaml)
+pre-commit run --all-files
+
+# Update hook versions
+pre-commit autoupdate
+```
+
+**Bypass hooks (use sparingly):**
+```bash
+# Skip hooks for WIP commits
+git commit --no-verify
+```
+
+**Note:** Hooks intentionally skip tests for speed. CI runs the full test suite.
 
 ### Manual Testing
 ```bash
@@ -142,7 +177,7 @@ All tests use mocks to avoid touching real Bear database or Things 3:
 - **Minimum Python**: 3.9+
 - **Package manager**: `uv` (preferred) or `pip`
 - **Dependencies**: None in production (uses only stdlib)
-- **Dev dependencies**: pytest, pytest-mock, ruff, pyright
+- **Dev dependencies**: pytest, pytest-mock, ruff, pyright, pre-commit
 
 ## Important Constraints
 

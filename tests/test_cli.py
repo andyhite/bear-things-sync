@@ -48,3 +48,12 @@ class TestCLI:
         main()
 
         assert mock_uninstall.called
+
+    def test_reset_command(self, mocker):
+        """Reset command should call reset."""
+        mocker.patch.object(sys, "argv", ["bear-things-sync", "reset"])
+        mock_reset = mocker.patch("bear_things_sync.reset.reset")
+
+        main()
+
+        assert mock_reset.called

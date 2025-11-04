@@ -201,13 +201,13 @@ def create_todo(
     if project:
         project_escaped = escape_applescript(project)
         # Create todo directly in the project
-        applescript = f'''
+        applescript = f"""
         tell application "Things3"
             set targetProject to first project whose name is "{project_escaped}"
             set newToDo to make new to do at end of to dos of targetProject with properties {{{", ".join(properties)}}}
             return id of newToDo
         end tell
-        '''
+        """
     else:
         applescript = f"""
         tell application "Things3"
@@ -247,13 +247,13 @@ def complete_todo(things_id: str) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    applescript = f'''
+    applescript = f"""
     tell application "Things3"
         set theTodo to to do id "{things_id}"
         set status of theTodo to completed
         return true
     end tell
-    '''
+    """
 
     try:
         _run_applescript(applescript)
