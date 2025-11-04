@@ -18,6 +18,46 @@ jobs:
           fetch-depth: 0  # Fetch all history for semantic-release
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check CI status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking CI status for commit ${{ github.sha }}..."
+
+          # Get the latest CI workflow run for this commit
+          CI_RUN=$(gh run list \
+            --workflow=ci.yml \
+            --commit=${{ github.sha }} \
+            --limit=1 \
+            --json status,conclusion)
+
+          # Check if we found a CI run
+          if [ "$CI_RUN" = "[]" ] || [ -z "$CI_RUN" ]; then
+            echo "❌ No CI workflow run found for this commit"
+            echo "Please ensure CI has run before publishing"
+            exit 1
+          fi
+
+          # Extract status and conclusion
+          STATUS=$(echo "$CI_RUN" | jq -r '.[0].status')
+          CONCLUSION=$(echo "$CI_RUN" | jq -r '.[0].conclusion')
+
+          echo "CI Status: $STATUS"
+          echo "CI Conclusion: $CONCLUSION"
+
+          # Check if CI has completed successfully
+          if [ "$STATUS" = "null" ] || [ "$STATUS" != "completed" ]; then
+            echo "❌ CI workflow has not completed yet. Status: $STATUS"
+            exit 1
+          fi
+
+          if [ "$CONCLUSION" = "null" ] || [ "$CONCLUSION" != "success" ]; then
+            echo "❌ CI workflow did not pass. Conclusion: $CONCLUSION"
+            exit 1
+          fi
+
+          echo "✅ CI workflow passed successfully"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -25,6 +65,15 @@ jobs:
 
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-publish-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-publish-
+            ${{ runner.os }}-uv-
 
       - name: Install dependencies
         run: |
