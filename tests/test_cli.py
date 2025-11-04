@@ -13,7 +13,7 @@ class TestCLI:
         # Mock sys.argv to simulate running without a subcommand
         mocker.patch.object(sys, "argv", ["bear-things-sync"])
 
-        # Mock the sync execute function where it's defined (imported by cli.py)
+        # Mock the execute function in the sync module (where it's defined)
         mock_execute = mocker.patch("bear_things_sync.sync.execute")
 
         # Run the CLI
