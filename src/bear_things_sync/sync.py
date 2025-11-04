@@ -4,7 +4,12 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from .bear import complete_todo_in_note, extract_todos, get_notes_with_todos
+from .bear import (
+    complete_todo_in_note,
+    extract_todos,
+    get_notes_with_todos,
+    uncomplete_todo_in_note,
+)
 from .config import (
     BIDIRECTIONAL_SYNC,
     EMBEDDING_CACHE_MAX_AGE_DAYS,
@@ -284,7 +289,7 @@ def should_skip_sync(state: dict, source: str) -> bool:
 
 def _sync_from_things(state: dict) -> None:
     """
-    Handle Things 3 → Bear sync (completions only).
+    Handle Things 3 → Bear sync (completions and un-completions).
 
     Args:
         state: Current state dict
@@ -295,9 +300,11 @@ def _sync_from_things(state: dict) -> None:
     notes = get_notes_with_todos()
     notes_by_id = {note["id"]: note for note in notes}
 
-    # Collect all synced Things IDs from state
-    all_things_ids = []
-    note_todos_map = {}  # Map things_id -> (note_id, todo_id, todo_text)
+    # Collect all synced Things IDs from state (both completed and incomplete)
+    incomplete_things_ids = []
+    completed_things_ids = []
+    incomplete_todos_map = {}  # Map things_id -> (note_id, todo_id, todo_text)
+    completed_todos_map = {}  # Map things_id -> (note_id, todo_id, todo_text)
 
     for note_id, note_data in state.items():
         if note_id.startswith("_"):
@@ -306,49 +313,88 @@ def _sync_from_things(state: dict) -> None:
         if "synced_todos" in note_data:
             for todo_id, todo_state in note_data["synced_todos"].items():
                 things_id = todo_state.get("things_id")
-                if things_id and not todo_state.get("completed", False):
-                    all_things_ids.append(things_id)
-                    note_todos_map[things_id] = (note_id, todo_id, todo_state.get("text", ""))
+                if not things_id:
+                    continue
 
-    if not all_things_ids:
-        log("No synced incomplete todos to check")
+                if todo_state.get("completed", False):
+                    # Track completed todos to detect un-completion
+                    completed_things_ids.append(things_id)
+                    completed_todos_map[things_id] = (note_id, todo_id, todo_state.get("text", ""))
+                else:
+                    # Track incomplete todos to detect completion
+                    incomplete_things_ids.append(things_id)
+                    incomplete_todos_map[things_id] = (note_id, todo_id, todo_state.get("text", ""))
+
+    if not incomplete_things_ids and not completed_things_ids:
+        log("No synced todos to check")
         return
 
-    # Query Things 3 for completed todos
-    completed_ids = get_completed_things_todos(all_things_ids)
+    # Query Things 3 for which todos are currently completed
+    all_things_ids = incomplete_things_ids + completed_things_ids
+    currently_completed_ids = get_completed_things_todos(all_things_ids)
 
-    if not completed_ids:
-        log("No todos completed in Things 3")
-        return
-
-    # Mark corresponding todos complete in Bear
+    # Handle newly completed todos (incomplete in Bear, completed in Things)
+    newly_completed_ids = [tid for tid in incomplete_things_ids if tid in currently_completed_ids]
     completed_count = 0
-    for things_id in completed_ids:
-        if things_id in note_todos_map:
-            note_id, todo_id, todo_text = note_todos_map[things_id]
+    for things_id in newly_completed_ids:
+        note_id, todo_id, todo_text = incomplete_todos_map[things_id]
 
-            # Get note content
-            if note_id not in notes_by_id:
-                log(f"WARNING: Note {note_id} not found in Bear database", "WARNING")
-                continue
+        # Get note content
+        if note_id not in notes_by_id:
+            log(f"WARNING: Note {note_id} not found in Bear database", "WARNING")
+            continue
 
-            note_content = notes_by_id[note_id]["content"]
+        note_content = notes_by_id[note_id]["content"]
 
-            # Mark complete in Bear via x-callback-url
-            if complete_todo_in_note(note_id, todo_text, note_content):
-                # Update state
-                state[note_id]["synced_todos"][todo_id]["completed"] = True
-                state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
-                state[note_id]["synced_todos"][todo_id]["last_modified_source"] = "things"
-                completed_count += 1
-                log(f"✓ Completed in Bear: '{todo_text}'")
-            else:
-                log(f"✗ Failed to complete in Bear: '{todo_text}'")
+        # Mark complete in Bear via x-callback-url
+        if complete_todo_in_note(note_id, todo_text, note_content):
+            # Update state
+            state[note_id]["synced_todos"][todo_id]["completed"] = True
+            state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
+            state[note_id]["synced_todos"][todo_id]["last_modified_source"] = "things"
+            completed_count += 1
+            log(f"✓ Completed in Bear: '{todo_text}'")
+        else:
+            log(f"✗ Failed to complete in Bear: '{todo_text}'")
 
-    if completed_count > 0:
-        summary = f"Completed {pluralize(completed_count, 'todo')} in Bear from Things 3"
+    # Handle newly uncompleted todos (completed in Bear, incomplete in Things)
+    newly_uncompleted_ids = [
+        tid for tid in completed_things_ids if tid not in currently_completed_ids
+    ]
+    uncompleted_count = 0
+    for things_id in newly_uncompleted_ids:
+        note_id, todo_id, todo_text = completed_todos_map[things_id]
+
+        # Get note content
+        if note_id not in notes_by_id:
+            log(f"WARNING: Note {note_id} not found in Bear database", "WARNING")
+            continue
+
+        note_content = notes_by_id[note_id]["content"]
+
+        # Mark incomplete in Bear via x-callback-url
+        if uncomplete_todo_in_note(note_id, todo_text, note_content):
+            # Update state
+            state[note_id]["synced_todos"][todo_id]["completed"] = False
+            state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
+            state[note_id]["synced_todos"][todo_id]["last_modified_source"] = "things"
+            uncompleted_count += 1
+            log(f"✓ Uncompleted in Bear: '{todo_text}'")
+        else:
+            log(f"✗ Failed to uncomplete in Bear: '{todo_text}'")
+
+    # Log summary
+    if completed_count > 0 or uncompleted_count > 0:
+        parts = []
+        if completed_count > 0:
+            parts.append(f"completed {pluralize(completed_count, 'todo')}")
+        if uncompleted_count > 0:
+            parts.append(f"uncompleted {pluralize(uncompleted_count, 'todo')}")
+        summary = f"{' and '.join(parts).capitalize()} in Bear from Things 3"
         log(summary)
         send_notification("Bear Things Sync", summary, sound=False)
+    else:
+        log("No completion changes detected in Things 3")
 
 
 def sync(source: str = "bear") -> None:

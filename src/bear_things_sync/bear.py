@@ -378,3 +378,100 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
             return False
 
     return False
+
+
+def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bool:
+    """
+    Mark a todo as incomplete in a Bear note using x-callback-url.
+
+    Args:
+        note_id: Bear note unique identifier
+        todo_text: The todo text to find and mark incomplete
+        note_content: Current note content (from database)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    max_attempts = APPLESCRIPT_MAX_RETRIES
+    delay = APPLESCRIPT_INITIAL_DELAY
+
+    for attempt in range(max_attempts):
+        try:
+            # Find and replace the todo in content
+            lines = note_content.split("\n")
+            modified = False
+            new_lines = []
+
+            for line in lines:
+                line_stripped = line.strip()
+
+                # Check if this line contains the completed todo we're looking for
+                # Try both "- [x]" and "* [x]" patterns
+                for prefix in ["-", "*"]:
+                    pattern = rf"^{re.escape(prefix)}\s+\[x\]\s+(.+)$"
+                    match = re.match(pattern, line_stripped)
+
+                    if match and match.group(1).strip() == todo_text:
+                        # Replace [x] with [ ]
+                        new_line = re.sub(r"\[x\]", "[ ]", line, count=1)
+                        new_lines.append(new_line)
+                        modified = True
+                        break
+                else:
+                    # No match, keep original line
+                    new_lines.append(line)
+
+            if not modified:
+                log(f"WARNING: Completed todo '{todo_text}' not found in note {note_id}")
+                return False
+
+            # Update note content via x-callback-url
+            new_content = "\n".join(new_lines)
+
+            # URL encode the content and note ID
+            import urllib.parse
+
+            encoded_text = urllib.parse.quote(new_content)
+            encoded_id = urllib.parse.quote(note_id)
+
+            # Use Bear's x-callback-url scheme to replace note content
+            url = f"bear://x-callback-url/add-text?id={encoded_id}&mode=replace_all&text={encoded_text}&open_note=no"
+
+            # Open the URL to trigger Bear
+            subprocess.run(["open", url], check=True, timeout=APPLESCRIPT_TIMEOUT)
+
+            # Give Bear a moment to process
+            time.sleep(0.5)
+
+            log(f"Marked todo incomplete in Bear: '{todo_text}' in note {note_id}")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            if attempt < max_attempts - 1:
+                log(
+                    f"Attempt {attempt + 1}/{max_attempts} failed for uncomplete_todo_in_note, "
+                    f"retrying in {delay}s..."
+                )
+                time.sleep(delay)
+                delay *= 2
+            else:
+                log(f"ERROR: Failed to uncomplete todo in Bear after {max_attempts} attempts: {e}")
+                log(traceback.format_exc())
+                return False
+        except subprocess.TimeoutExpired:
+            if attempt < max_attempts - 1:
+                log(
+                    f"URL scheme timeout (attempt {attempt + 1}/{max_attempts}), "
+                    f"retrying in {delay}s..."
+                )
+                time.sleep(delay)
+                delay *= 2
+            else:
+                log(f"ERROR: URL scheme timeout after {max_attempts} attempts")
+                return False
+        except Exception as e:
+            log(f"ERROR uncompleting todo in Bear: {e}")
+            log(traceback.format_exc())
+            return False
+
+    return False
