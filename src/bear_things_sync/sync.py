@@ -334,7 +334,10 @@ def _sync_from_things(state: dict) -> None:
         note_content = notes_by_id[note_id]["content"]
 
         # Mark complete in Bear via x-callback-url
-        if complete_todo_in_note(note_id, todo_text, note_content):
+        success, updated_content = complete_todo_in_note(note_id, todo_text, note_content)
+        if success:
+            # Update in-memory content for next todo in same note
+            notes_by_id[note_id]["content"] = updated_content
             # Update state
             state[note_id]["synced_todos"][todo_id]["completed"] = True
             state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()
@@ -374,7 +377,10 @@ def _sync_from_things(state: dict) -> None:
         note_content = notes_by_id[note_id]["content"]
 
         # Mark incomplete in Bear via x-callback-url
-        if uncomplete_todo_in_note(note_id, todo_text, note_content):
+        success, updated_content = uncomplete_todo_in_note(note_id, todo_text, note_content)
+        if success:
+            # Update in-memory content for next todo in same note
+            notes_by_id[note_id]["content"] = updated_content
             # Update state
             state[note_id]["synced_todos"][todo_id]["completed"] = False
             state[note_id]["synced_todos"][todo_id]["last_modified_time"] = time.time()

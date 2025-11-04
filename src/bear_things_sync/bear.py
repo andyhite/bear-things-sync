@@ -283,7 +283,7 @@ def _escape_applescript(text: str) -> str:
     return text
 
 
-def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bool:
+def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> tuple[bool, str]:
     """
     Mark a todo as complete in a Bear note using x-callback-url.
 
@@ -293,7 +293,8 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
         note_content: Current note content (from database)
 
     Returns:
-        True if successful, False otherwise
+        Tuple of (success, updated_content). If successful, updated_content contains
+        the new note content with the todo marked complete. If failed, returns original content.
     """
     max_attempts = APPLESCRIPT_MAX_RETRIES
     delay = APPLESCRIPT_INITIAL_DELAY
@@ -326,7 +327,7 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
 
             if not modified:
                 log(f"WARNING: Todo '{todo_text}' not found in note {note_id}")
-                return False
+                return (False, note_content)
 
             # Update note content via x-callback-url
             new_content = "\n".join(new_lines)
@@ -347,7 +348,7 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
             time.sleep(0.5)
 
             log(f"Marked todo complete in Bear: '{todo_text}' in note {note_id}")
-            return True
+            return (True, new_content)
 
         except subprocess.CalledProcessError as e:
             if attempt < max_attempts - 1:
@@ -360,7 +361,7 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
             else:
                 log(f"ERROR: Failed to complete todo in Bear after {max_attempts} attempts: {e}")
                 log(traceback.format_exc())
-                return False
+                return (False, note_content)
         except subprocess.TimeoutExpired:
             if attempt < max_attempts - 1:
                 log(
@@ -371,16 +372,16 @@ def complete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bo
                 delay *= 2
             else:
                 log(f"ERROR: URL scheme timeout after {max_attempts} attempts")
-                return False
+                return (False, note_content)
         except Exception as e:
             log(f"ERROR completing todo in Bear: {e}")
             log(traceback.format_exc())
-            return False
+            return (False, note_content)
 
-    return False
+    return (False, note_content)
 
 
-def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> bool:
+def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> tuple[bool, str]:
     """
     Mark a todo as incomplete in a Bear note using x-callback-url.
 
@@ -390,7 +391,8 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
         note_content: Current note content (from database)
 
     Returns:
-        True if successful, False otherwise
+        Tuple of (success, updated_content). If successful, updated_content contains
+        the new note content with the todo marked incomplete. If failed, returns original content.
     """
     max_attempts = APPLESCRIPT_MAX_RETRIES
     delay = APPLESCRIPT_INITIAL_DELAY
@@ -423,7 +425,7 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
 
             if not modified:
                 log(f"WARNING: Completed todo '{todo_text}' not found in note {note_id}")
-                return False
+                return (False, note_content)
 
             # Update note content via x-callback-url
             new_content = "\n".join(new_lines)
@@ -444,7 +446,7 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
             time.sleep(0.5)
 
             log(f"Marked todo incomplete in Bear: '{todo_text}' in note {note_id}")
-            return True
+            return (True, new_content)
 
         except subprocess.CalledProcessError as e:
             if attempt < max_attempts - 1:
@@ -457,7 +459,7 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
             else:
                 log(f"ERROR: Failed to uncomplete todo in Bear after {max_attempts} attempts: {e}")
                 log(traceback.format_exc())
-                return False
+                return (False, note_content)
         except subprocess.TimeoutExpired:
             if attempt < max_attempts - 1:
                 log(
@@ -468,10 +470,10 @@ def uncomplete_todo_in_note(note_id: str, todo_text: str, note_content: str) -> 
                 delay *= 2
             else:
                 log(f"ERROR: URL scheme timeout after {max_attempts} attempts")
-                return False
+                return (False, note_content)
         except Exception as e:
             log(f"ERROR uncompleting todo in Bear: {e}")
             log(traceback.format_exc())
-            return False
+            return (False, note_content)
 
-    return False
+    return (False, note_content)
