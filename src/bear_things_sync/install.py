@@ -198,7 +198,7 @@ def find_template_file(filename: str) -> Optional[Path]:
 
         # Fallback for development: check project structure
         package_root = get_package_root()
-        if filename == "watch_bear.sh":
+        if filename == "watch_sync.sh":
             dev_path = package_root.parent.parent / "scripts" / filename
         else:  # daemon.plist.template
             dev_path = package_root.parent.parent / "templates" / filename
@@ -214,7 +214,7 @@ def find_template_file(filename: str) -> Optional[Path]:
             return installed_path
 
         # Check development location (project root)
-        if filename == "watch_bear.sh":
+        if filename == "watch_sync.sh":
             dev_path = package_root.parent.parent / "scripts" / filename
         else:  # daemon.plist.template
             dev_path = package_root.parent.parent / "templates" / filename
@@ -242,7 +242,7 @@ def copy_installation_files(install_dir: Path) -> tuple[Path, Path]:
     print()
 
     # Find template files
-    watcher_template = find_template_file("watch_bear.sh")
+    watcher_template = find_template_file("watch_sync.sh")
     plist_template = find_template_file("daemon.plist.template")
 
     # Check if templates exist
@@ -257,7 +257,7 @@ def copy_installation_files(install_dir: Path) -> tuple[Path, Path]:
 
     # Copy and configure watcher script
     print("Installing watcher script...")
-    watcher_output = install_dir / "watch_bear.sh"
+    watcher_output = install_dir / "watch_sync.sh"
     shutil.copy(watcher_template, watcher_output)
     watcher_output.chmod(0o755)  # Make executable
     print(f"✓ Installed: {watcher_output}")

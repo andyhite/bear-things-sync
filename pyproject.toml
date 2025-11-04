@@ -21,7 +21,7 @@ build-backend = "hatchling.build"
 packages = ["src/bear_things_sync"]
 
 [tool.hatchling.build.targets.wheel.shared-data]
-"scripts/watch_bear.sh" = "bear_things_sync/watch_bear.sh"
+"scripts/watch_sync.sh" = "bear_things_sync/watch_sync.sh"
 "templates/daemon.plist.template" = "bear_things_sync/daemon.plist.template"
 
 [tool.uv]
